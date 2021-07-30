@@ -1044,3 +1044,45 @@ select * from foo where
 select * from foo where
   (case when foo.i in (select a.i from baz a) then foo.i else null end) in
   (select b.i from baz b);
+
+-- When creating plan with subquery and CTE, it sets the useless flow for the plan.
+-- But we only need flow for the topmost plan and child of the motion. See commit
+-- https://github.com/greenplum-db/gpdb/commit/93abe741cd67f04958e2951edff02b45ab6e280f for detail
+-- The extra flow will cause subplan set wrong motionType and cause an ERROR
+-- unexpected gang size: XX
+-- case 1 for testing subplan
+create table t(a int, b int, c date);
+create table t1(a int, b int);
+
+insert into t select i, i, '1949-10-01'::date from generate_series(1, 10)i;
+insert into t1 select i, i from generate_series(20, 22)i;
+
+explain (verbose, costs off) with run_dt as (
+	select
+	(
+	  select c from t where b = x
+	) dt
+	from (select ( max(1) ) x) a
+)
+select * from run_dt, t1
+where dt < '2010-01-01'::date;
+
+with run_dt as (
+	select
+	(
+	  select c from t where b = x
+	) dt
+	from (select ( max(1) ) x) a
+)
+select * from run_dt, t1
+where dt < '2010-01-01'::date;
+
+
+-- case 2 for testing subplan
+create table r(a int) distributed replicated;
+explain (verbose, costs off) with run_dt as (
+select x, y dt
+from (select a x from r ) a left join (select max(1) y) aaa on a.x > any (select random() from t)
+)
+select * from run_dt, t1
+where dt < t1.a;
