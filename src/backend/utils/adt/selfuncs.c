@@ -7047,6 +7047,16 @@ bmcostestimate(struct PlannerInfo *root,
 
 	*indexStartupCost = costs.indexStartupCost;
 	*indexTotalCost = costs.indexTotalCost;
+	#ifdef FAULT_INJECTOR
+		/* Simulate an bitmapAnd plan by changing bitmap cost. */
+		if (FaultInjector_InjectFaultIfSet("simulate_bitmap_and",
+									DDLNotSpecified,
+									"",
+									"") == FaultInjectorTypeSkip)
+		{
+			*indexTotalCost = 0;
+		}
+	#endif
 	*indexSelectivity = costs.indexSelectivity;
 	*indexCorrelation = costs.indexCorrelation;
 	*indexPages = costs.numIndexPages;

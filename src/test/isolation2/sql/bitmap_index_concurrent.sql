@@ -258,8 +258,27 @@ SELECT gp_inject_fault('after_read_one_bitmap_idx_page', 'reset', dbid) FROM gp_
 -- AO tables. This is because the wrong tid transform to an invalud AOTupleId.
 1<:
 
+--
+-- Test 5, run SQL produced BitmapAnd plan on two bitmap indexs which outputs multiple keys by using in in where clause
+--
+CREATE TABLE bmunion (a int, b int, c int, d int, t text);
+INSERT INTO bmunion
+  SELECT (r%53), (r%59), (r%53), (r%59), 'foooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo'
+  FROM generate_series(1,70000) r;
+CREATE INDEX i_bmtest2_a ON bmunion USING BITMAP(a);
+CREATE INDEX i_bmtest2_b ON bmunion USING BITMAP(b);
+CREATE INDEX i_bmtest2_c ON bmunion(c);
+CREATE INDEX i_bmtest2_d ON bmunion(d);
+INSERT INTO bmunion SELECT 53, 1, 0, 0 FROM generate_series(1, 1000);
+-- Inject fault.
+SELECT gp_inject_fault('simulate_bitmap_and', 'skip', dbid) FROM gp_segment_configuration WHERE role = 'p' and content = 0;
+EXPLAIN (COSTS OFF) SELECT count(*) FROM bmunion WHERE a = 53 AND b < 3;
+SELECT count(*) FROM bmunion WHERE a = 53 AND b < 3;
+SELECT gp_inject_fault('simulate_bitmap_and', 'reset', dbid) FROM gp_segment_configuration WHERE role = 'p' and content = 0;
+
 -- Let's check the total tuple count after the test.
 SELECT count(*) FROM bmupdate WHERE id >= 97 and id <= 99 and gp_segment_id = 0;
 
 DROP TABLE bmupdate;
 
+DROP TABLE bmunion;
