@@ -456,6 +456,11 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 				}
 				else
 				{
+					/* FIXME skip get targetPolicy for copy (select ...) */
+					if (query->parentStmtType == PARENTSTMTTYPE_COPY)
+					{
+						break;
+					}
 					/* First try to deduce the distribution from the query */
 					targetPolicy = get_partitioned_policy_from_flow(plan);
 
