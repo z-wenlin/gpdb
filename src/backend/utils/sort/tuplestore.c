@@ -946,6 +946,7 @@ tuplestore_gettuple(Tuplestorestate *state, bool forward,
 {
 	TSReadPointer *readptr = &state->readptrs[state->activeptr];
 	unsigned int tuplen;
+	unsigned int tupbodylen;
 	void	   *tup;
 
 	Assert(forward || (readptr->eflags & EXEC_FLAG_BACKWARD));
@@ -1063,6 +1064,15 @@ tuplestore_gettuple(Tuplestorestate *state, bool forward,
 				return NULL;
 			}
 			tuplen = getlen(state, false);
+			if (is_len_memtuplen(tuplen))
+			{
+				tupbodylen = memtuple_size_from_uint32(tuplen);
+			}
+			else
+			{
+				/* len is HeapTuple.t_len. The record size includes rest of the HeapTuple fields */
+				tupbodylen = tuplen + HEAPTUPLESIZE;
+			}
 
 			if (readptr->eof_reached)
 			{
@@ -1075,7 +1085,7 @@ tuplestore_gettuple(Tuplestorestate *state, bool forward,
 				 * Back up to get ending length word of tuple before it.
 				 */
 				if (BufFileSeek(state->myfile, readptr->file,
-								-(long) (tuplen + 2 * sizeof(unsigned int)),
+								-(long) (tupbodylen + 2 * sizeof(unsigned int)),
 								SEEK_CUR) != 0)
 				{
 					/*
@@ -1085,7 +1095,7 @@ tuplestore_gettuple(Tuplestorestate *state, bool forward,
 					 * what in-memory case does).
 					 */
 					if (BufFileSeek(state->myfile, readptr->file,
-									-(long) (tuplen + sizeof(unsigned int)),
+									-(long) (tupbodylen + sizeof(unsigned int)),
 									SEEK_CUR) != 0)
 						ereport(ERROR,
 								(errcode_for_file_access(),
@@ -1102,7 +1112,7 @@ tuplestore_gettuple(Tuplestorestate *state, bool forward,
 			 * length word of the tuple, so back up to that point.
 			 */
 			if (BufFileSeek(state->myfile, readptr->file,
-							-(long) tuplen,
+							-(long) tupbodylen,
 							SEEK_CUR) != 0)
 				ereport(ERROR,
 						(errcode_for_file_access(),
@@ -1560,9 +1570,13 @@ writetup_heap(Tuplestorestate *state, void *tup)
 {
 	uint32		tuplen = 0;
 	Size		memsize = 0;
+	bool		is_memtupe = false;
 
 	if (is_memtuple((GenericTuple) tup))
+	{
 		tuplen = memtuple_get_size((MemTuple) tup);
+		is_memtupe = true;
+	}
 	else
 	{
 		Assert(!is_heaptuple_splitter((HeapTuple) tup));
@@ -1572,11 +1586,16 @@ writetup_heap(Tuplestorestate *state, void *tup)
 	if (BufFileWrite(state->myfile, (void *) tup, tuplen) != (size_t) tuplen)
 		elog(ERROR, "write failed");
 	if (state->backward)		/* need trailing length word? */
+	{
+		if (is_memtupe)
+			/* trailing length add leading bit, might 1XXX | 0X30 if MemTup */
+			tuplen = tuplen | MEMTUP_LEAD_BIT;
 		if (BufFileWrite(state->myfile, (void *) &tuplen,
 						 sizeof(tuplen)) != sizeof(tuplen))
 			ereport(ERROR,
 					(errcode_for_file_access(),
 				errmsg("could not write to tuplestore temporary file: %m")));
+	}
 
 	memsize = GetMemoryChunkSpace(tup);
 
@@ -1591,26 +1610,6 @@ readtup_heap(Tuplestorestate *state, unsigned int len)
 {
 	void	   *tup = NULL;
 	uint32		tuplen = 0;
-
-	/*
-	 * CDB: in backward mode the passed-in len is the trailing length, it does
-	 * not contain the leading bit as the leading length used in forward mode.
-	 * The leading bit is necessary to determine the tuple type, a memory tuple
-	 * or a heap tuple, so we must re-read the leading length to make this
-	 * decision.
-	 */
-	if (state->backward)
-	{
-		TSReadPointer *readptr = &state->readptrs[state->activeptr];
-
-		if (BufFileSeek(state->myfile, readptr->file,
-						-(long) sizeof(unsigned int), SEEK_CUR) != 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not seek in tuplestore temporary file: %m")));
-
-		len = getlen(state, false);
-	}
 
 	if (is_len_memtuplen(len))
 	{
