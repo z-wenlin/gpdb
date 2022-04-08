@@ -207,4 +207,5 @@ create table t_lockmods_ao1 (c int) with (appendonly=true) distributed randomly;
 1: show gp_enable_global_deadlock_detector;
 
 1: drop table lockmodes_datadir;
+!\retcode gpstop -arf;
 1q:
