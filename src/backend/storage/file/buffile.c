@@ -243,8 +243,11 @@ extendBufFile(BufFile *file)
 	 * queries from destroying the entire system. Counting each segment file is
 	 * reasonable for this scenario.
 	 */
-	FileSetIsWorkfile(pfile);
-	RegisterFileWithSet(pfile, file->work_set);
+	if (file->work_set)
+	{
+		FileSetIsWorkfile(pfile);
+		RegisterFileWithSet(pfile, file->work_set);
+	}
 }
 
 /*
@@ -286,9 +289,12 @@ BufFileCreateTempInSet(char *operation_name, bool interXact, workfile_set *work_
 	 * Register the file as a "work file", so that the Greenplum workfile
 	 * limits apply to it.
 	 */
-	file->work_set = work_set;
-	FileSetIsWorkfile(pfile);
-	RegisterFileWithSet(pfile, work_set);
+	if (work_set)
+	{
+		file->work_set = work_set;
+		FileSetIsWorkfile(pfile);
+		RegisterFileWithSet(pfile, work_set);
+	}
 
 	SIMPLE_FAULT_INJECTOR("workfile_creation_failure");
 

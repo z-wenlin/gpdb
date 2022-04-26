@@ -121,6 +121,46 @@ CONTEXT:  SQL function "gp_workfile_mgr_test" statement 1
  t                    
  t                    
 (4 rows)
+1: select gp_workfile_mgr_test('buffile_size_test', 2000);
+ gp_workfile_mgr_test
+----------------------
+ t
+ t
+ t
+ t
+(4 rows)
+1: select gp_workfile_mgr_test('buffile_large_file_test', 2000);
+ gp_workfile_mgr_test
+----------------------
+ t
+ t
+ t
+ t
+(4 rows)
+1: select gp_workfile_mgr_test('execworkfile_buffile_test', 2000);
+ gp_workfile_mgr_test
+----------------------
+ t
+ t
+ t
+ t
+(4 rows)
+1: select gp_workfile_mgr_test('execworkfile_create_one_MB_file', 2000);
+ gp_workfile_mgr_test
+----------------------
+ t
+ t
+ t
+ t
+(4 rows)
+1: select gp_workfile_mgr_test('logicaltape_test', 2000);
+ gp_workfile_mgr_test
+----------------------
+ t
+ t
+ t
+ t
+(4 rows)
 
 1: DROP TABLESPACE work_file_test_ts;
 DROP
