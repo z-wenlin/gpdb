@@ -527,7 +527,6 @@ logicaltape_test(void)
 	/* Target record values */
 	int test_tape = 5;
 	int test_entry = 45000;
-	LogicalTapePos entryPos;
 
 	LogicalTapeSet *tape_set = LogicalTapeSetCreate(max_tapes, NULL, NULL, -1);
 
