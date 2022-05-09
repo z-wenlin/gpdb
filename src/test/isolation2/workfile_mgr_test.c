@@ -242,17 +242,17 @@ execworkfile_buffile_test(void)
 	unit_test_result(written == nchars && expected_size == WorkfileSegspace_GetSize() - initial_diskspace);
 
 	elog(LOG, "Running sub-test: Writing to the middle of a EWF/Buffile and checking size");
-	result = BufFileSeek(ewf, 0 /* fileno */, BufFileSize(ewf) / 2, SEEK_SET);
+	result = BufFileSeek(ewf, 0 /* fileno */, BufFileGetSize(ewf) / 2, SEEK_SET);
 	Assert(result == 0);
 	/* This write should not add to the size */
-	success = BufFileWrite(ewf, text->data, BufFileSize(ewf) / 10);
+	success = BufFileWrite(ewf, text->data, BufFileGetSize(ewf) / 10);
 
 	unit_test_result(success && expected_size == WorkfileSegspace_GetSize() - initial_diskspace);
 
 	elog(LOG, "Running sub-test: Seeking past end and writing data to EWF/Buffile and checking size");
 	int past_end_offset = 100;
 	int past_end_write = 200;
-	result = BufFileSeek(ewf, 0 /* fileno */, BufFileSize(ewf) + past_end_offset, SEEK_SET);
+	result = BufFileSeek(ewf, 0 /* fileno */, BufFileGetSize(ewf) + past_end_offset, SEEK_SET);
 	Assert(result == 0);
 	written = BufFileWrite(ewf, text->data, past_end_write);
 	expected_size += past_end_offset + past_end_write;
@@ -260,7 +260,7 @@ execworkfile_buffile_test(void)
 	unit_test_result(written == past_end_write && expected_size == WorkfileSegspace_GetSize() - initial_diskspace);
 
 	elog(LOG, "Running sub-test: Closing EWF/Buffile"); // keep it open
-	final_size = BufFileSize(ewf);
+	final_size = BufFileGetSize(ewf);
 	unit_test_result(final_size == expected_size);
 
 	write_ewf = ewf;
@@ -270,7 +270,7 @@ execworkfile_buffile_test(void)
 	ewf = BufFileCreateTemp(file_name,
 							   false /* interXact */);
 
-	current_size = BufFileSize(ewf);
+	current_size = BufFileGetSize(ewf);
 	unit_test_result(current_size == final_size);
 
 	elog(LOG, "Running sub-test: Reading from reopened EWF/Buffile file");
@@ -283,7 +283,7 @@ execworkfile_buffile_test(void)
 	pfree(buf);
 
 	elog(LOG, "Running sub-test: Closing EWF/Buffile");
-	final_size = BufFileSize(ewf);
+	final_size = BufFileGetSize(ewf);
 	BufFileClose(ewf);
 
 	unit_test_result(final_size == current_size);
@@ -320,16 +320,15 @@ buffile_size_test(void)
 	unit_test_result(NULL != testBf);
 
 	elog(LOG, "Running sub-test: Size of newly created buffile");
-	int64 test_size = BufFileSize(testBf);
+	int64 test_size = BufFileGetSize(testBf);
 	unit_test_result(test_size == 0);
 
 	elog(LOG, "Running sub-test: Writing to new buffile and reading size < bufsize");
 	int nchars = 10000;
 	int expected_size = nchars;
 	StringInfo text = create_text_stringinfo(nchars);
-	test_size = BufFileWrite(testBf, text->data, nchars);
-	pfree(text->data);
-	pfree(text);
+	BufFileWrite(testBf, text->data, nchars);
+	test_size = BufFileGetSize(testBf);
 
 	unit_test_result(test_size == expected_size);
 
@@ -337,7 +336,8 @@ buffile_size_test(void)
 	nchars = 1000000;
 	expected_size += nchars;
 	text = create_text_stringinfo(nchars);
-	test_size += BufFileWrite(testBf, text->data, nchars);
+	BufFileWrite(testBf, text->data, nchars);
+	test_size = BufFileGetSize(testBf);
 
 	unit_test_result(test_size == expected_size);
 
@@ -345,26 +345,23 @@ buffile_size_test(void)
 	BufFileSeek(testBf, 0 /* fileno */, expected_size/2, SEEK_SET);
 	/* This write should not add to the size */
 	BufFileWrite(testBf, text->data, expected_size / 10);
-	test_size = BufFileSize(testBf);
+	test_size = BufFileGetSize(testBf);
 
 	unit_test_result(test_size == expected_size);
 
 	elog(LOG, "Running sub-test: Opening existing and testing size");
 	BufFile *testBf1 = testBf;
-	test_size = BufFileSize(testBf1);
+	test_size = BufFileGetSize(testBf1);
 
 	unit_test_result(test_size == expected_size);
 
 	elog(LOG, "Running sub-test: Seek past end, appending and testing size");
-	//TODO
 	int past_end_offset = 100;
 	int past_end_write = 200;
 	BufFileSeek(testBf1, 0 /* fileno */, expected_size + past_end_offset, SEEK_SET);
-	int64 nwriten = BufFileWrite(testBf1, text->data, past_end_write);
-	test_size = BufFileSize(testBf1);
-	test_size += nwriten;
-	expected_size += past_end_write;
-	//expected_size += past_end_offset + past_end_write;
+	BufFileWrite(testBf1, text->data, past_end_write);
+	expected_size += past_end_offset + past_end_write;
+	test_size = BufFileGetSize(testBf1);
 
 	unit_test_result(test_size == expected_size);
 
@@ -530,8 +527,9 @@ logicaltape_test(void)
 
 	LogicalTapeSet *tape_set = LogicalTapeSetCreate(max_tapes, NULL, NULL, -1);
 
-	//LogicalTape *work_tape = NULL;
 	int work_tape = 0;
+	long blocknum = 0;
+	int offset = 0;
 
 	StringInfo test_string = create_text_stringinfo(nchars);
 
@@ -540,7 +538,6 @@ logicaltape_test(void)
 	/* Fill LogicalTapeSet */
 	for (int i = 0; i < max_tapes; i++)
 	{
-		//work_tape = LogicalTapeSetGetTape(tape_set, i);
 		work_tape = i;
 
 		/* Create large SpillFile for LogicalTape */
@@ -551,9 +548,7 @@ logicaltape_test(void)
 			{
 				if ( j == test_entry)
 				{
-					/* Keep record position of target record in LogicalTape */
-					//LogicalTapeUnfrozenTell(tape_set, work_tape, &entryPos);
-
+					LogicalTapeTell(tape_set, work_tape, &blocknum, &offset);
 					LogicalTapeWrite(tape_set, work_tape, test_string->data, (size_t)test_string->len);
 				}
 				else
@@ -589,7 +584,7 @@ logicaltape_test(void)
 	LogicalTapeFreeze(tape_set, work_tape, NULL);
 
 	elog(LOG, "Running sub-test: Seek in LogicalTape");
-	//LogicalTapeSeek(tape_set, work_tape, &entryPos);
+	LogicalTapeSeek(tape_set, work_tape, blocknum, offset);
 
 	elog(LOG, "Running sub-test: Reading from LogicalTape");
 	LogicalTapeRead(tape_set, work_tape, buffer, (size_t)(nchars*sizeof(char)));
@@ -628,14 +623,14 @@ execworkfile_create_one_MB_file(void)
 
 	StringInfo text = create_text_stringinfo(nchars);
 
-	int64 final_size = BufFileWrite(ewf, text->data, nchars*sizeof(char));
+	BufFileWrite(ewf, text->data, nchars*sizeof(char));
 
 	pfree(text->data);
 	pfree(text);
 
 	elog(LOG, "Running sub-test: Closing file %s", filename->data);
 
-	//int64 final_size = BufFileSize(ewf);
+	int64 final_size = BufFileGetSize(ewf);
 
 	BufFileClose(ewf);
 
