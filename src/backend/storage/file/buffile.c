@@ -1058,21 +1058,37 @@ BufFileSize(BufFile *file)
 }
 
 /*
- * Return the current shared BufFile size.
+ * Returns the size of this file according to current accounting.
  *
- * When the BuffileFlush on Disk, BufFileGetSize() returns the same result
- * as BufFileSize().
- * But when the buffer is not full, BufFileSize() only returns the file size
- * that flushed on Disk, not counting the size in buffer.
+ * Unlike BufFileSize(), which only returns the size of BufFile flushed to the
+ * disk, BufFileGetSize() returns the size of whole BufFile including buffer.
  *
- * Therefore, the BufFileGetSize() is used to return the whole size.
+ * For a compressed BufFile, this returns the uncompressed size!
  */
 int64
 BufFileGetSize(BufFile *file)
 {
-	int64 fileSizeWithoutBuffer;
-	fileSizeWithoutBuffer = BufFileSize(file);
-	/* When seek back then write some data, and the write doesn't add size. */
+	Assert(NULL != file);
+
+	switch (file->state)
+	{
+	case BFS_RANDOM_ACCESS:
+	case BFS_SEQUENTIAL_WRITING:
+	case BFS_SEQUENTIAL_READING:
+		break;
+	case BFS_COMPRESSED_WRITING:
+	case BFS_COMPRESSED_READING:
+#ifdef HAVE_LIBZSTD
+		return file->uncompressed_bytes;
+#else
+		Assert(false);
+		break;
+#endif
+	}
+
+	int64 fileSizeWithoutBuffer = BufFileSize(file);
+
+	/* Writing after seek back doesn't always change the size. */
 	if (fileSizeWithoutBuffer > (file->curOffset + file->pos))
 	{
 		return fileSizeWithoutBuffer;
