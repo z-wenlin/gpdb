@@ -4,14 +4,20 @@ starting permutation: listen begin check notify check
 step listen: LISTEN a;
 step begin: BEGIN;
 step check: SELECT pg_notification_queue_usage() > 0 AS nonzero;
-nonzero        
+nonzero
+-------
+f      
+(1 row)
 
-f              
 step notify: SELECT count(pg_notify('a', s::text)) FROM generate_series(1, 10000) s;
-count          
+count
+-----
+10000
+(1 row)
 
-10000          
 step check: SELECT pg_notification_queue_usage() > 0 AS nonzero;
-nonzero        
+nonzero
+-------
+t      
+(1 row)
 
-t              
