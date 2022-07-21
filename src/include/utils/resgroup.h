@@ -81,11 +81,16 @@ typedef struct ResGroupCaps
 	ResGroupCap		memSpillRatio;
 	ResGroupCap		memAuditor;
 	char			cpuset[MaxCpuSetLength];
+	char			cpusetForMaster[MaxCpuSetLength];
+	char			cpusetForSegment[MaxCpuSetLength];
 } ResGroupCaps;
 
 /* Set 'cpuset' to an empty string, and reset all other fields to zero */
-#define ClearResGroupCaps(caps) \
-	MemSet((caps), 0, offsetof(ResGroupCaps, cpuset) + 1)
+#define ClearResGroupCaps(caps) do { \
+	MemSet((caps), 0, offsetof(ResGroupCaps, cpuset) + 1); \
+	MemSet((caps), 0, offsetof(ResGroupCaps, cpusetForMaster) + 1); \
+	MemSet((caps), 0, offsetof(ResGroupCaps, cpusetForSegment) + 1); \
+} while(0)
 
 
 /*

@@ -248,13 +248,26 @@ CreateResourceGroup(CreateResourceGroupStmt *stmt)
 		{
 			EnsureCpusetIsAvailable(ERROR);
 
-			ResGroupOps_SetCpuSet(groupid, caps.cpuset);
 			/* reset default group, subtract new group cpu cores */
 			char defaultGroupCpuset[MaxCpuSetLength];
 			ResGroupOps_GetCpuSet(DEFAULT_CPUSET_GROUP_ID,
 								  defaultGroupCpuset,
 								  MaxCpuSetLength);
-			CpusetDifference(defaultGroupCpuset, caps.cpuset, MaxCpuSetLength);
+
+			if (Gp_role == GP_ROLE_DISPATCH && caps.cpusetForMaster != NULL)
+			{
+				ResGroupOps_SetCpuSet(groupid, caps.cpusetForMaster);
+				CpusetDifference(defaultGroupCpuset, caps.cpusetForMaster, MaxCpuSetLength);
+			} else if (Gp_role == GP_ROLE_EXECUTE && caps.cpusetForSegment != NULL)
+			{
+				ResGroupOps_SetCpuSet(groupid, caps.cpusetForSegment);
+				CpusetDifference(defaultGroupCpuset, caps.cpusetForSegment, MaxCpuSetLength);
+			} else if (!CpusetIsEmpty(caps.cpuset))
+			{
+				ResGroupOps_SetCpuSet(groupid, caps.cpuset);
+				CpusetDifference(defaultGroupCpuset, caps.cpuset, MaxCpuSetLength);
+			}
+				
 			ResGroupOps_SetCpuSet(DEFAULT_CPUSET_GROUP_ID, defaultGroupCpuset);
 		}
 		SIMPLE_FAULT_INJECTOR("create_resource_group_fail");
@@ -378,6 +391,8 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 	ResGroupCaps		oldCaps;
 	ResGroupCap			value = 0;
 	const char *cpuset = NULL;
+	const char cpusetForMaster[MaxCpuSetLength] = {0};
+	const char cpusetForSegment[MaxCpuSetLength] = {0};
 	ResourceGroupCallbackContext	*callbackCtx;
 
 	/* Permission check - only superuser can alter resource groups. */
@@ -402,7 +417,21 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 		EnsureCpusetIsAvailable(ERROR);
 
 		cpuset = defGetString(defel);
-		checkCpusetSyntax(cpuset);
+		// Split cpuset to get master cpuset and segment cpuset.
+		char copycpuset[MaxCpuSetLength] = "";
+		strcpy(copycpuset, cpuset);
+		const *delim = ";";
+		char *token = strtok(copycpuset, delim);
+		for (int i = 0; token != NULL; i++)
+		{
+			checkCpusetSyntax(token);
+			if (i == 0)
+				StrNCpy(cpusetForMaster, token, sizeof(cpusetForMaster));
+			if (i == 1)
+				StrNCpy(cpusetForSegment, token, sizeof(cpusetForSegment));
+			token = strtok(NULL, token);
+		}
+
 	}
 	else
 	{
@@ -450,6 +479,8 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 		case RESGROUP_LIMIT_TYPE_CPU:
 			caps.cpuRateLimit = value;
 			SetCpusetEmpty(caps.cpuset, sizeof(caps.cpuset));
+			SetCpusetEmpty(caps.cpusetForMaster, sizeof(caps.cpusetForMaster));
+			SetCpusetEmpty(caps.cpusetForSegment, sizeof(caps.cpusetForSegment));
 			break;
 		case RESGROUP_LIMIT_TYPE_MEMORY:
 			caps.memLimit = value;
@@ -467,6 +498,8 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 			caps.memAuditor = value;
 			break;
 		case RESGROUP_LIMIT_TYPE_CPUSET:
+			StrNCpy(caps.cpusetForMaster, cpusetForMaster, sizeof(caps.cpusetForMaster));
+			StrNCpy(caps.cpusetForSegment, cpusetForSegment, sizeof(caps.cpusetForSegment));
 			StrNCpy(caps.cpuset, cpuset, sizeof(caps.cpuset));
 			caps.cpuRateLimit = CPU_RATE_LIMIT_DISABLED;
 			break;
@@ -617,6 +650,7 @@ GetResGroupCapabilities(Relation rel, Oid groupId, ResGroupCaps *resgroupCaps)
 												   getResgroupOptionName(type));
 				break;
 			case RESGROUP_LIMIT_TYPE_CPUSET:
+				// TODO Split cpuset to get master cpuset and segment cpuset.
 				StrNCpy(resgroupCaps->cpuset, value, sizeof(resgroupCaps->cpuset));
 				break;
 			default:
@@ -1011,7 +1045,21 @@ parseStmtOptions(CreateResourceGroupStmt *stmt, ResGroupCaps *caps)
 		if (type == RESGROUP_LIMIT_TYPE_CPUSET) 
 		{
 			const char *cpuset = defGetString(defel);
-			checkCpusetSyntax(cpuset);
+			// Split cpuset to get master cpuset and segment cpuset.
+			char copycpuset[MaxCpuSetLength] = "";
+			strcpy(copycpuset, cpuset);
+			const *delim = ";";
+			char *token = strtok(copycpuset, delim);
+			for (int i = 0; token != NULL; i++)
+			{
+				checkCpusetSyntax(token);
+				if (i == 0)
+					StrNCpy(caps->cpusetForMaster, token, sizeof(caps->cpusetForMaster));
+				if (i == 1)
+					StrNCpy(caps->cpusetForSegment, token, sizeof(caps->cpusetForSegment));
+				token = strtok(NULL, token);
+			}
+
 			StrNCpy(caps->cpuset, cpuset, sizeof(caps->cpuset));
 			caps->cpuRateLimit = CPU_RATE_LIMIT_DISABLED;
 		}
@@ -1028,6 +1076,8 @@ parseStmtOptions(CreateResourceGroupStmt *stmt, ResGroupCaps *caps)
 				case RESGROUP_LIMIT_TYPE_CPU:
 					caps->cpuRateLimit = value;
 					SetCpusetEmpty(caps->cpuset, sizeof(caps->cpuset));
+					SetCpusetEmpty(caps->cpusetForMaster, sizeof(caps->cpusetForMaster));
+					SetCpusetEmpty(caps->cpusetForSegment, sizeof(caps->cpusetForSegment));
 					break;
 				case RESGROUP_LIMIT_TYPE_MEMORY:
 					caps->memLimit = value;
@@ -1292,31 +1342,36 @@ validateCapabilities(Relation rel,
 		gp_resource_group_enable_cgroup_cpuset)
 	{
 		Bitmapset *bmsAll = NULL;
+		Bitmapset *bmsMissing = NULL;
 
 		/* Get all available cores */
 		ResGroupOps_GetCpuSet(RESGROUP_ROOT_ID,
 							  cpusetAll,
 							  MaxCpuSetLength);
 		bmsAll = CpusetToBitset(cpusetAll, MaxCpuSetLength);
+
 		/* Check whether the cores in this group are available */
-		if (!CpusetIsEmpty(caps->cpuset))
+		if (Gp_role == GP_ROLE_DISPATCH && caps->cpusetForMaster != NULL)
 		{
-			Bitmapset *bmsMissing = NULL;
-
+			bmsCurrent = CpusetToBitset(caps->cpusetForMaster, MaxCpuSetLength);
+		} else if (Gp_role == GP_ROLE_EXECUTE && caps->cpusetForSegment != NULL)
+		{
+			bmsCurrent = CpusetToBitset(caps->cpusetForSegment, MaxCpuSetLength);
+		} else if (!CpusetIsEmpty(caps->cpuset)) {
 			bmsCurrent = CpusetToBitset(caps->cpuset, MaxCpuSetLength);
-			bmsCommon = bms_intersect(bmsCurrent, bmsAll);
-			bmsMissing = bms_difference(bmsCurrent, bmsCommon);
-
-			if (!bms_is_empty(bmsMissing))
-			{
-				BitsetToCpuset(bmsMissing, cpusetMissing, MaxCpuSetLength);
-
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("cpu cores %s are unavailable on the system",
-								cpusetMissing)));
-			}
 		}
+		bmsCommon = bms_intersect(bmsCurrent, bmsAll);
+		bmsMissing = bms_difference(bmsCurrent, bmsCommon);
+
+		if (!bms_is_empty(bmsMissing))
+		{
+			BitsetToCpuset(bmsMissing, cpusetMissing, MaxCpuSetLength);
+
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("cpu cores %s are unavailable on the system",
+							cpusetMissing)));
+		} 
 	}
 
 	sscan = systable_beginscan(rel, ResGroupCapabilityResgroupidIndexId,
@@ -1405,7 +1460,7 @@ validateCapabilities(Relation rel,
 
 						ereport(ERROR,
 								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-								 errmsg("cpu cores %s are used by resource group %s",
+								errmsg("cpu cores %s are used by resource group %s",
 										cpusetMissing,
 										GetResGroupNameForId(resgroupid))));
 					}
