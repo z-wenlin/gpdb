@@ -615,6 +615,7 @@ InitResGroups(void)
 		Oid			groupId = ((Form_pg_resgroup) GETSTRUCT(tuple))->oid;
 		ResGroupData	*group;
 		int cpuRateLimit;
+		Bitmapset *bmsCurrent;
 
 		GetResGroupCapabilities(relResGroupCapability, groupId, &caps);
 		cpuRateLimit = caps.cpuRateLimit;
@@ -631,8 +632,20 @@ InitResGroups(void)
 		}
 		else
 		{
-			Bitmapset *bmsCurrent = CpusetToBitset(caps.cpuset,
+			if (Gp_role == GP_ROLE_DISPATCH && caps.cpusetForMaster != NULL)
+			{
+				bmsCurrent = CpusetToBitset(caps.cpusetForMaster,
 												   MaxCpuSetLength);
+			} else if (Gp_role == GP_ROLE_EXECUTE && caps.cpusetForSegment != NULL)
+			{
+				bmsCurrent = CpusetToBitset(caps.cpusetForSegment,
+												   MaxCpuSetLength);
+			} else 
+			{
+				bmsCurrent = CpusetToBitset(caps.cpuset,
+												   MaxCpuSetLength);	
+			}
+
 			Bitmapset *bmsCommon = bms_intersect(bmsCurrent, bmsUnused);
 			Bitmapset *bmsMissing = bms_difference(bmsCurrent, bmsCommon);
 
@@ -909,8 +922,20 @@ ResGroupAlterOnCommit(const ResourceGroupCallbackContext *callbackCtx)
 		else if (callbackCtx->limittype == RESGROUP_LIMIT_TYPE_CPUSET)
 		{
 			if (gp_resource_group_enable_cgroup_cpuset)
-				ResGroupOps_SetCpuSet(callbackCtx->groupid,
+			{
+				if (Gp_role == GP_ROLE_DISPATCH && callbackCtx->caps.cpusetForMaster != NULL)
+				{
+					ResGroupOps_SetCpuSet(callbackCtx->groupid,
+									  callbackCtx->caps.cpusetForMaster);
+				} else if (Gp_role == GP_ROLE_EXECUTE && callbackCtx->caps.cpusetForSegment != NULL)
+				{
+					ResGroupOps_SetCpuSet(callbackCtx->groupid,
+									  callbackCtx->caps.cpusetForSegment);
+				} else {
+					ResGroupOps_SetCpuSet(callbackCtx->groupid,
 									  callbackCtx->caps.cpuset);
+				}
+			}
 		}
 		else if (callbackCtx->limittype != RESGROUP_LIMIT_TYPE_MEMORY_SPILL_RATIO)
 		{
@@ -935,6 +960,7 @@ ResGroupAlterOnCommit(const ResourceGroupCallbackContext *callbackCtx)
 								  MaxCpuSetLength);
 			/* Add old value to default group
 			 * sub new value from default group */
+			//TODO add cpusetForMaster and cpusetForSegment
 			CpusetUnion(defaultCpusetGroup,
 							callbackCtx->oldCaps.cpuset,
 							MaxCpuSetLength);
