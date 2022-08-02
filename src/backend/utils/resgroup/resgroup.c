@@ -632,19 +632,16 @@ InitResGroups(void)
 		}
 		else
 		{
-			if (Gp_role == GP_ROLE_DISPATCH && caps.cpusetForMaster != NULL)
+			char *cpusetArray[2]= {0};
+			getSpiltCpuSet(caps.cpuset, cpusetArray);
+			if (cpusetArray != NULL)
 			{
-				bmsCurrent = CpusetToBitset(caps.cpusetForMaster,
-												   MaxCpuSetLength);
-			} else if (Gp_role == GP_ROLE_EXECUTE && caps.cpusetForSegment != NULL)
-			{
-				bmsCurrent = CpusetToBitset(caps.cpusetForSegment,
-												   MaxCpuSetLength);
-			} else 
-			{
-				bmsCurrent = CpusetToBitset(caps.cpuset,
-												   MaxCpuSetLength);	
+				if (Gp_role == GP_ROLE_EXECUTE && cpusetArray[1] != NULL)
+					bmsCurrent = CpusetToBitset(cpusetArray[1], MaxCpuSetLength);
+				else
+					bmsCurrent = CpusetToBitset(cpusetArray[0], MaxCpuSetLength);
 			}
+
 
 			Bitmapset *bmsCommon = bms_intersect(bmsCurrent, bmsUnused);
 			Bitmapset *bmsMissing = bms_difference(bmsCurrent, bmsCommon);
@@ -670,7 +667,15 @@ InitResGroups(void)
 				 * write cpus to corresponding file
 				 * if all the cores are available
 				 */
-				ResGroupOps_SetCpuSet(groupId, caps.cpuset);
+				char *cpusetArray[2]= {0};
+				getSpiltCpuSet(caps.cpuset, cpusetArray);
+				if (cpusetArray != NULL)
+				{
+					if (Gp_role == GP_ROLE_EXECUTE && cpusetArray[1] != NULL)
+						ResGroupOps_SetCpuSet(groupId, cpusetArray[1]);
+					else
+						ResGroupOps_SetCpuSet(groupId, cpusetArray[0]);
+				}
 				bmsUnused = bms_del_members(bmsUnused, bmsCurrent);
 			}
 			else
@@ -923,18 +928,20 @@ ResGroupAlterOnCommit(const ResourceGroupCallbackContext *callbackCtx)
 		{
 			if (gp_resource_group_enable_cgroup_cpuset)
 			{
-				if (Gp_role == GP_ROLE_DISPATCH && callbackCtx->caps.cpusetForMaster != NULL)
+				char *cpusetArray[CpuSetArrayLength] = {0}; 
+				getSpiltCpuSet(callbackCtx->caps.cpuset, cpusetArray);
+				if (cpusetArray != NULL)
 				{
-					ResGroupOps_SetCpuSet(callbackCtx->groupid,
-									  callbackCtx->caps.cpusetForMaster);
-				} else if (Gp_role == GP_ROLE_EXECUTE && callbackCtx->caps.cpusetForSegment != NULL)
+					if (Gp_role == GP_ROLE_EXECUTE && cpusetArray[1] != NULL)
+						ResGroupOps_SetCpuSet(callbackCtx->groupid, cpusetArray[1]);
+					else
+						ResGroupOps_SetCpuSet(callbackCtx->groupid, cpusetArray[0]);
+				} else
 				{
-					ResGroupOps_SetCpuSet(callbackCtx->groupid,
-									  callbackCtx->caps.cpusetForSegment);
-				} else {
 					ResGroupOps_SetCpuSet(callbackCtx->groupid,
 									  callbackCtx->caps.cpuset);
 				}
+				
 			}
 		}
 		else if (callbackCtx->limittype != RESGROUP_LIMIT_TYPE_MEMORY_SPILL_RATIO)

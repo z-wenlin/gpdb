@@ -1,5 +1,5 @@
-test: resgroup/enable_resgroup_validate
-test: resgroup/enable_resgroup
+#test: resgroup/enable_resgroup_validate
+#test: resgroup/enable_resgroup
 
 # basic syntax
 test: resgroup/resgroup_views
