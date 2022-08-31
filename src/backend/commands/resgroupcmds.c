@@ -1613,10 +1613,17 @@ getSpiltCpuSet(const char *cpuset, char *cpusetArray[CpuSetArrayLength])
 	// Split cpuset to get master cpuset and segment cpuset.
 	int i = 0;
 	char *spiltCpuset = strtok(copycpuset, ";");
+	char *ret = strstr(cpuset, ";");
 
 	while (spiltCpuset != NULL)
 	{
 		cpusetArray[i++] = spiltCpuset;
 		spiltCpuset = strtok (NULL, ";");
+	}
+	if (ret != NULL && i < CpuSetArrayLength)
+	{
+		ereport(ERROR,
+		(errcode(ERRCODE_SYNTAX_ERROR),
+			errmsg("cpuset invalid")));
 	}
 }
