@@ -31,7 +31,7 @@ PYLIB_DIR=$(SRC)/ext
 core: pygresql subprocess32
 	python gpconfig_modules/parse_guc_metadata.py $(prefix)
 
-ifneq "$(wildcard $(CURDIR)/pythonSrc/ext/*.tar.gz)" ""
+ifeq ($(with_pythonsrc_ext), yes)
 install: core lockfile paramiko ecdsa pycrypto stream psutil
 else
 install: core stream

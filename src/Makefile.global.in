@@ -165,6 +165,7 @@ sqlmansect_dummy = l
 
 with_perl	= @with_perl@
 with_python	= @with_python@
+with_pythonsrc_ext = @with_pythonsrc_ext@
 with_tcl	= @with_tcl@
 with_openssl	= @with_openssl@
 with_ossp_uuid	= @with_ossp_uuid@
