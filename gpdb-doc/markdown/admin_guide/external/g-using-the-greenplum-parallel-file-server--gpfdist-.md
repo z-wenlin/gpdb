@@ -33,11 +33,11 @@ You can run `gpfdist` instances on multiple hosts and you can run multiple `gpfd
 
 -   Allow network traffic to use all ETL host network interfaces simultaneously. Run one instance of gpfdist for each interface on the ETL host, then declare the host name of each NIC in the `LOCATION` clause of your external table definition \(see [Examples for Creating External Tables](g-creating-external-tables---examples.html)\).
 
-![](../graphics/ext_tables_multinic.jpg "External Table Using Single gpfdist Instance with Multiple NICs")
+![External Table Using Single gpfdist Instance with Multiple NICs](../graphics/ext_tables_multinic.jpg "External Table Using Single gpfdist Instance with Multiple NICs")
 
 -   Divide external table data equally among multiple gpfdist instances on the ETL host. For example, on an ETL system with two NICs, run two gpfdist instances \(one on each NIC\) to optimize data load performance and divide the external table data files evenly between the two gpfdist servers.
 
-![](../graphics/ext_tables.jpg "External Tables Using Multiple gpfdist Instances with Multiple NICs")
+![External Tables Using Multiple gpfdist Instances with Multiple NICs](../graphics/ext_tables.jpg "External Tables Using Multiple gpfdist Instances with Multiple NICs")
 
 **Note:** Use pipes \(\|\) to separate formatted text when you submit files to gpfdist. Greenplum Database encloses comma-separated text strings in single or double quotes. gpfdist has to remove the quotes to parse the strings. Using pipes to separate formatted text avoids the extra step and improves performance.
 
@@ -84,7 +84,7 @@ First find its process id:
 $ ps -ef | grep gpfdist
 ```
 
-Then kill the process, for example \(where 3456 is the process ID in this example\):
+Then terminate the process, for example \(where 3456 is the process ID in this example\):
 
 ```
 $ kill 3456
@@ -102,7 +102,7 @@ $ wget http://<gpfdist_hostname>:<port>/<filename>
 
 The `CREATE EXTERNAL TABLE` definition must have the correct host name, port, and file names for gpfdist. Specify file names and paths relative to the directory from which gpfdist serves files \(the directory path specified when gpfdist started\). See [Examples for Creating External Tables](g-creating-external-tables---examples.html).
 
-If you start gpfdist on your system and IPv6 networking is disabled, gpfdist displays this warning message when testing for an IPv6 port.
+If you start gpfdist on your system and IPv6 networking is deactivated, gpfdist displays this warning message when testing for an IPv6 port.
 
 ```
 [WRN gpfdist.c:2050] Creating the socket failed
