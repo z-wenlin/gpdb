@@ -10,7 +10,7 @@
  <li><a href="#topic6">Planning New Segment Initialization</a> provides information about planning to initialize new segment hosts with <code>gpexpand</code>.</li> 
  <li><a href="#topic10">Planning Table Redistribution</a> provides information about planning the data redistribution after the new segment hosts have been initialized.</li> 
 </ul> 
-<p><strong>Parent topic:</strong> <a href="GUID-admin_guide-expand-expand-main.html">Expanding a Greenplum System</a></p> 
+<p><strong>Parent topic:</strong> <a href="./expand-main.html">Expanding a Greenplum System</a></p> 
 <div class="topic nested1" xml:lang="en" lang="en" id="topic4">
     <h2 class="title topictitle2">System Expansion Checklist</h2>
     <div class="body">
@@ -175,7 +175,7 @@
  <li>Capture the system configuration (users, profiles, NICs, and so on) from existing hardware to use as a detailed list for ordering new hardware.</li> 
  <li>Create a custom build plan for deploying hardware with the desired configuration in the particular site and environment.</li> 
 </ul> 
-<p>After selecting and adding new hardware to your network environment, ensure you perform the tasks described in <a href="GUID-admin_guide-expand-expand-nodes.html">Preparing and Adding Hosts</a>.</p> 
+<p>After selecting and adding new hardware to your network environment, ensure you perform the tasks described in <a href="./expand-nodes.html">Preparing and Adding Hosts</a>.</p> 
 <h2 id="planning-new-segment-initialization"><a id="topic6"></a>Planning New Segment Initialization</h2> 
 <p>Expanding Greenplum Database requires a limited period of system downtime. During this period, run <code>gpexpand</code> to initialize new segments into the array and create an expansion schema.</p> 
 <p>The time required depends on the number of schema objects in the Greenplum system and other factors related to hardware performance. In most environments, the initialization of new segments requires less than thirty minutes offline.</p> 
@@ -199,7 +199,7 @@
 <h3 id="increasing-segments-per-host"><a id="topic8"></a>Increasing Segments Per Host</h3> 
 <p>By default, new hosts are initialized with as many primary segments as existing hosts have. You can increase the segments per host or add new segments to existing hosts.</p> 
 <p>For example, if existing hosts currently have two segments per host, you can use <code>gpexpand</code> to initialize two additional segments on existing hosts for a total of four segments and initialize four new segments on new hosts.</p> 
-<p>The interactive process for creating an expansion input file prompts for this option; you can also specify new segment directories manually in the input configuration file. For more information, see <a href="GUID-admin_guide-expand-expand-initialize.html">Creating an Input File for System Expansion</a>.</p> 
+<p>The interactive process for creating an expansion input file prompts for this option; you can also specify new segment directories manually in the input configuration file. For more information, see <a href="./expand-initialize.html">Creating an Input File for System Expansion</a>.</p> 
 <h3 id="about-the-expansion-schema"><a id="topic9"></a>About the Expansion Schema</h3> 
 <p>At initialization, <code>gpexpand</code> creates an expansion schema. If you do not specify a database at initialization (<code>gpexpand -D</code>), the schema is created in the database indicated by the PGDATABASE environment variable.</p> 
 <p>The expansion schema stores metadata for each table in the system so its status can be tracked throughout the expansion process. The expansion schema consists of two tables and a view for tracking expansion operation progress:</p> 
@@ -208,13 +208,13 @@
  <li><em>gpexpand.status_detail</em></li> 
  <li><em>gpexpand.expansion_progress</em></li> 
 </ul> 
-<p>Control expansion process aspects by modifying <em>gpexpand.status_detail</em>. For example, removing a record from this table prevents the system from expanding the table across new segments. Control the order in which tables are processed for redistribution by updating the <code>rank</code> value for a record. For more information, see <a href="GUID-admin_guide-expand-expand-redistribute.html">Ranking Tables for Redistribution</a>.</p> 
+<p>Control expansion process aspects by modifying <em>gpexpand.status_detail</em>. For example, removing a record from this table prevents the system from expanding the table across new segments. Control the order in which tables are processed for redistribution by updating the <code>rank</code> value for a record. For more information, see <a href="./expand-redistribute.html">Ranking Tables for Redistribution</a>.</p> 
 <h2 id="planning-table-redistribution"><a id="topic10"></a>Planning Table Redistribution</h2> 
 <p>Table redistribution is performed while the system is online. For many Greenplum systems, table redistribution completes in a single <code>gpexpand</code> session scheduled during a low-use period. Larger systems may require multiple sessions and setting the order of table redistribution to minimize performance impact. Complete the table redistribution in one session if possible.</p> 
 <p><strong>Important:</strong> To perform table redistribution, your segment hosts must have enough disk space to temporarily hold a copy of your largest table. All tables are unavailable for read and write operations during redistribution.</p> 
 <p>The performance impact of table redistribution depends on the size, storage type, and partitioning design of a table. For any given table, redistributing it with <code>gpexpand</code> takes as much time as a <code>CREATE TABLE AS SELECT</code> operation would. When redistributing a terabyte-scale fact table, the expansion utility can use much of the available system resources, which could affect query performance or other database workloads.</p> 
 <h3 id="managing-redistribution-in-large-scale-greenplum-systems"><a id="topic11"></a>Managing Redistribution in Large-Scale Greenplum Systems</h3> 
-<p>You can manage the order in which tables are redistributed by adjusting their ranking. See <a href="GUID-admin_guide-expand-expand-redistribute.html">Ranking Tables for Redistribution</a>. Manipulating the redistribution order can help adjust for limited disk space and restore optimal query performance for high-priority queries sooner.</p>
+<p>You can manage the order in which tables are redistributed by adjusting their ranking. See <a href="./expand-redistribute.html">Ranking Tables for Redistribution</a>. Manipulating the redistribution order can help adjust for limited disk space and restore optimal query performance for high-priority queries sooner.</p>
 <p>When planning the redistribution phase, consider the impact of the exclusive lock taken on each table during redistribution. User activity on a table can delay its redistribution, but also tables are unavailable for user activity during redistribution.</p>  
 <h4 id="systems-with-abundant-free-disk-space"><a id="systs"></a>Systems with Abundant Free Disk Space</h4> 
 <p>In systems with abundant free disk space (required to store a copy of the largest table), you can focus on restoring optimum query performance as soon as possible by first redistributing important tables that queries use heavily. Assign high ranking to these tables, and schedule redistribution operations for times of low system usage. Run one redistribution process at a time until large or critical tables have been redistributed.</p> 
