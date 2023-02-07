@@ -189,7 +189,7 @@
 </ul> 
 <p><strong>Important:</strong> After you begin initializing new segments, you can no longer restore the system using backup files created for the pre-expansion system. When initialization successfully completes, the expansion is committed and cannot be rolled back.</p> 
 <h3 id="planning-mirror-segments"><a id="topic7"></a>Planning Mirror Segments</h3> 
-<p>If your existing system has mirror segments, the new segments must have mirroring configured. If there are no mirrors configured for existing segments, you cannot add mirrors to new hosts with the <code>gpexpand</code> utility. For more information about segment mirroring configurations that are available during system initialization, see <a href="GUID-admin_guide-highavail-topics-g-overview-of-segment-mirroring.html#mirror_configs">Overview of Segment Mirroring Configurations</a>.</p> 
+<p>If your existing system has mirror segments, the new segments must have mirroring configured. If there are no mirrors configured for existing segments, you cannot add mirrors to new hosts with the <code>gpexpand</code> utility. For more information about segment mirroring configurations that are available during system initialization, see <a href="../highavail/topics/g-overview-of-segment-mirroring.html#mirror_configs">Overview of Segment Mirroring Configurations</a>.</p> 
 <p>For Greenplum Database systems with mirror segments, ensure you add enough new host machines to accommodate new mirror segments. The number of new hosts required depends on your mirroring strategy:</p> 
 <ul> 
  <li><strong>Group Mirroring</strong> — Add at least two new hosts so the mirrors for the first host can reside on the second host, and the mirrors for the second host can reside on the first. This is the default type of mirroring if you enable segment mirroring during system initialization.</li> 
@@ -223,7 +223,7 @@
 <p>Also consider the following:</p> 
 <ul> 
  <li>Run multiple parallel redistribution processes during off-peak hours to maximize available system resources.</li> 
- <li>When running multiple processes, operate within the connection limits for your Greenplum system. For information about limiting concurrent connections, see <a href="GUID-admin_guide-client_auth.html">Limiting Concurrent Connections</a>.</li> 
+ <li>When running multiple processes, operate within the connection limits for your Greenplum system. For information about limiting concurrent connections, see <a href="../client_auth.html">Limiting Concurrent Connections</a>.</li> 
 </ul> 
 <h3 id="redistributing-append-optimized-and-compressed-tables"><a id="topic13"></a>Redistributing Append-Optimized and Compressed Tables</h3> 
 <p><code>gpexpand</code> redistributes append-optimized and compressed append-optimized tables at different rates than heap tables. The CPU capacity required to compress and decompress data tends to increase the impact on system performance. For similar-sized tables with similar data, you may find overall performance differences like the following:</p> 
