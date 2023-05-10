@@ -577,7 +577,7 @@ void MirroredAppendOnly_MirrorReCreate(
 				&primaryError,
 				mirrorDataLossOccurred);
 	Assert(primaryError == 0);	// No primary work here.
-	if (mirrorDataLossOccurred)
+	if (*mirrorDataLossOccurred)
 		return;
 
 	MirroredAppendOnly_FlushAndClose(
