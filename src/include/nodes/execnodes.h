@@ -1139,6 +1139,7 @@ typedef struct PlanState
 	bool		fHadSentNodeStart;
 
 	bool		squelched;		/* has ExecSquelchNode() been called already? */
+	bool		prefetch_subplans_done;		/* prefetch_subplans already done? */
 } PlanState;
 
 extern uint64 PlanStateOperatorMemKB(const PlanState *ps);
@@ -2397,6 +2398,7 @@ typedef struct MaterialState
 	bool		ts_destroyed;	/* called destroy tuple store? */
 	bool		delayEagerFree;	/* is is safe to free memory used by this node,
 								 * when this node has outputted its last row? */
+	bool		cdb_strict;
 } MaterialState;
 
 /* ----------------

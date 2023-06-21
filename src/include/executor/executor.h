@@ -254,7 +254,6 @@ extern void ExecEndNode(PlanState *node);
 extern bool ExecShutdownNode(PlanState *node);
 extern void ExecSetTupleBound(int64 tuples_needed, PlanState *child_node);
 
-
 /* ----------------------------------------------------------------
  *		ExecProcNode
  *

@@ -111,6 +111,7 @@
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "executor/executor.h"
+#include "executor/execUtils.h"
 #include "executor/hashjoin.h"
 #include "executor/instrument.h"	/* Instrumentation */
 #include "executor/nodeHash.h"
