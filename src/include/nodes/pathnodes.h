@@ -1357,9 +1357,6 @@ typedef struct Path
 
 	CdbPathLocus    locus;      /* distribution of the result tuples */
 
-	bool        motionHazard;   /* true => path contains a CdbMotion operator
-					without a slackening operator above it */
-
 	bool		rescannable;    /* CDB: true => path can accept ExecRescan call
                                  */
 	List	   *pathkeys;		/* sort ordering of path's output */

@@ -271,7 +271,6 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			pathnode->path.startup_cost = subpath->total_cost;
 			pathnode->path.total_cost = subpath->total_cost;
 			pathnode->path.memory = subpath->memory;
-			pathnode->path.motionHazard = subpath->motionHazard;
 
 			/* Motion nodes are never rescannable. */
 			pathnode->path.rescannable = false;
@@ -320,7 +319,6 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			pathnode->path.startup_cost = subpath->total_cost;
 			pathnode->path.total_cost = subpath->total_cost;
 			pathnode->path.memory = subpath->memory;
-			pathnode->path.motionHazard = subpath->motionHazard;
 
 			/* Motion nodes are never rescannable. */
 			pathnode->path.rescannable = false;
@@ -569,7 +567,6 @@ cdbpath_create_motion_path(PlannerInfo *root,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	/*
@@ -624,7 +621,6 @@ cdbpath_create_explicit_motion_path(PlannerInfo *root,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	return (Path *) pathnode;
@@ -663,7 +659,6 @@ cdbpath_create_broadcast_motion_path(PlannerInfo *root,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	return (Path *) pathnode;
@@ -707,7 +702,6 @@ make_motion_path(PlannerInfo *root, Path *subpath,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	return pathnode;

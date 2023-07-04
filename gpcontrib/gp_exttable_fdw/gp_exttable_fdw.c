@@ -406,7 +406,6 @@ exttable_GetForeignPaths(PlannerInfo *root,
 									   NULL,		/* no extra plan */
 									   list_make1(externalscan_info));
 	pathnode->path.locus = cdbpathlocus_from_baserel(root, baserel);
-	pathnode->path.motionHazard = false;
 
 	/*
 	 * Mark external tables as non-rescannable. While rescan is possible,

@@ -4869,8 +4869,8 @@ create_nestloop_plan(PlannerInfo *root,
 	 * NOTE: materialize_finished_plan() does *almost* what we want -- except
 	 * we aren't finished.
 	 */
-	if (best_path->innerjoinpath->motionHazard ||
-		!best_path->innerjoinpath->rescannable)
+	//TODO: spike for motion hazard 1st. join.out
+	if (!best_path->innerjoinpath->rescannable)
 	{
 		Plan	   *p;
 		Material   *mat;
@@ -4908,11 +4908,11 @@ create_nestloop_plan(PlannerInfo *root,
 		 * MPP-1657: Even if there is already a materialize here, we
 		 * may need to update its strictness.
 		 */
-		if (best_path->outerjoinpath->motionHazard)
-		{
-			mat->cdb_strict = true;
-			prefetch = true;
-		}
+		// if (best_path->outerjoinpath->motionHazard)
+		// {
+		mat->cdb_strict = true;
+		prefetch = true;
+		// }
 	}
 	
 	/* Restore curOuterRels */
@@ -5120,27 +5120,6 @@ create_mergejoin_plan(PlannerInfo *root,
 		innerpathkeys = best_path->jpath.innerjoinpath->pathkeys;
 
 	/*
-	 * MPP-3300: very similar to the nested-loop join motion deadlock cases. But we may have already
-	 * put some slackening operators below (e.g. a sort).
-	 *
-	 * We need some kind of strict slackening operator (something which consumes all of its
-	 * input before producing a row of output) for our inner. And we need to prefetch that side
-	 * first.
-	 *
-	 * See motion_sanity_walker() for details on how a deadlock may occur.
-	 */
-	if (best_path->jpath.outerjoinpath->motionHazard && best_path->jpath.innerjoinpath->motionHazard)
-	{
-		prefetch = true;
-		if (!IsA(inner_plan, Sort))
-		{
-			if (!IsA(inner_plan, Material))
-				best_path->materialize_inner = true;
-			set_mat_cdb_strict = true;
-		}
-	}
-
-	/*
 	 * If specified, add a materialize node to shield the inner plan from the
 	 * need to handle mark/restore.
 	 */
@@ -5160,9 +5139,6 @@ create_mergejoin_plan(PlannerInfo *root,
 
 		inner_plan = matplan;
 	}
-
-	if (set_mat_cdb_strict)
-		((Material *) inner_plan)->cdb_strict = true;
 
 	/*
 	 * Compute the opfamily/collation/strategy/nullsfirst arrays needed by the
@@ -5538,9 +5514,8 @@ create_hashjoin_plan(PlannerInfo *root,
 	 * (allowing us to check the outer for rows before building the
 	 * hash-table).
 	 */
-	if (best_path->jpath.outerjoinpath == NULL ||
-		best_path->jpath.outerjoinpath->motionHazard ||
-		best_path->jpath.innerjoinpath->motionHazard)
+	//TODO: spike for motion hazard. without true prefetch_inner will be false and it will deadlock.
+	if (best_path->jpath.outerjoinpath == NULL || true)
 	{
 		join_plan->join.prefetch_inner = true;
 	}
