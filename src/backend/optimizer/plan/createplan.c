@@ -4869,8 +4869,8 @@ create_nestloop_plan(PlannerInfo *root,
 	 * NOTE: materialize_finished_plan() does *almost* what we want -- except
 	 * we aren't finished.
 	 */
-	if (best_path->innerjoinpath->motionHazard ||
-		!best_path->innerjoinpath->rescannable)
+	//TODO: spike for motion hazard 1st. join.out
+	if (!best_path->innerjoinpath->rescannable)
 	{
 		Plan	   *p;
 		Material   *mat;
@@ -4908,11 +4908,11 @@ create_nestloop_plan(PlannerInfo *root,
 		 * MPP-1657: Even if there is already a materialize here, we
 		 * may need to update its strictness.
 		 */
-		if (best_path->outerjoinpath->motionHazard)
-		{
-			mat->cdb_strict = true;
-			prefetch = true;
-		}
+		// if (best_path->outerjoinpath->motionHazard)
+		// {
+		mat->cdb_strict = true;
+		prefetch = true;
+		// }
 	}
 	
 	/* Restore curOuterRels */
@@ -5129,16 +5129,16 @@ create_mergejoin_plan(PlannerInfo *root,
 	 *
 	 * See motion_sanity_walker() for details on how a deadlock may occur.
 	 */
-	if (best_path->jpath.outerjoinpath->motionHazard && best_path->jpath.innerjoinpath->motionHazard)
+	// if (best_path->jpath.outerjoinpath->motionHazard && best_path->jpath.innerjoinpath->motionHazard)
+	// {
+	prefetch = true;
+	if (!IsA(inner_plan, Sort))
 	{
-		prefetch = true;
-		if (!IsA(inner_plan, Sort))
-		{
-			if (!IsA(inner_plan, Material))
-				best_path->materialize_inner = true;
-			set_mat_cdb_strict = true;
-		}
+		if (!IsA(inner_plan, Material))
+			best_path->materialize_inner = true;
+		set_mat_cdb_strict = true;
 	}
+	// }
 
 	/*
 	 * If specified, add a materialize node to shield the inner plan from the
@@ -5538,9 +5538,8 @@ create_hashjoin_plan(PlannerInfo *root,
 	 * (allowing us to check the outer for rows before building the
 	 * hash-table).
 	 */
-	if (best_path->jpath.outerjoinpath == NULL ||
-		best_path->jpath.outerjoinpath->motionHazard ||
-		best_path->jpath.innerjoinpath->motionHazard)
+	//TODO: spike for motion hazard. without true prefetch_inner will be false and it will deadlock.
+	if (best_path->jpath.outerjoinpath == NULL || true)
 	{
 		join_plan->join.prefetch_inner = true;
 	}

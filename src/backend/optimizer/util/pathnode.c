@@ -1035,7 +1035,6 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->pathkeys = NIL;	/* seqscan has unordered result */
 
 	pathnode->locus = cdbpathlocus_from_baserel(root, rel);
-	pathnode->motionHazard = false;
 	pathnode->rescannable = true;
 	pathnode->sameslice_relids = rel->relids;
 
@@ -1064,7 +1063,6 @@ create_samplescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer
 	pathnode->pathkeys = NIL;	/* samplescan has unordered result */
 
 	pathnode->locus = cdbpathlocus_from_baserel(root, rel);
-	pathnode->motionHazard = false;
 	pathnode->rescannable = true;
 	pathnode->sameslice_relids = rel->relids;
 
@@ -1130,7 +1128,6 @@ create_index_path(PlannerInfo *root,
 
 	/* Distribution is same as the base table. */
 	pathnode->path.locus = cdbpathlocus_from_baserel(root, rel);
-	pathnode->path.motionHazard = false;
 	pathnode->path.rescannable = true;
 	pathnode->path.sameslice_relids = rel->relids;
 
@@ -1173,7 +1170,6 @@ create_bitmap_heap_path(PlannerInfo *root,
 
 	/* Distribution is same as the base table. */
 	pathnode->path.locus = cdbpathlocus_from_baserel(root, rel);
-	pathnode->path.motionHazard = false;
 	pathnode->path.rescannable = true;
 	pathnode->path.sameslice_relids = rel->relids;
 
@@ -1318,7 +1314,6 @@ create_tidscan_path(PlannerInfo *root, RelOptInfo *rel, List *tidquals,
 
 	/* Distribution is same as the base table. */
 	pathnode->path.locus = cdbpathlocus_from_baserel(root, rel);
-	pathnode->path.motionHazard = false;
 	pathnode->path.rescannable = true;
 	pathnode->path.sameslice_relids = rel->relids;
 
@@ -1377,7 +1372,6 @@ create_append_path(PlannerInfo *root,
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->partitioned_rels = list_copy(partitioned_rels);
 
-	pathnode->path.motionHazard = false;
 	pathnode->path.rescannable = true;
 
 	/*
@@ -1946,8 +1940,6 @@ set_append_path_locus(PlannerInfo *root, Path *pathnode, RelOptInfo *rel,
 
 		pathnode->sameslice_relids = bms_union(pathnode->sameslice_relids, subpath->sameslice_relids);
 
-		if (subpath->motionHazard)
-			pathnode->motionHazard = true;
 
 		if (!subpath->rescannable)
 			pathnode->rescannable = false;
@@ -2010,7 +2002,6 @@ create_group_result_path(PlannerInfo *root, RelOptInfo *rel,
 
 	/* Result can be on any segments */
 	CdbPathLocus_MakeGeneral(&pathnode->path.locus);
-	pathnode->path.motionHazard = false;
 	pathnode->path.rescannable = true;
 
 	return pathnode;
@@ -2039,7 +2030,6 @@ create_material_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath)
 	pathnode->path.pathkeys = subpath->pathkeys;
 
 	pathnode->path.locus = subpath->locus;
-	pathnode->path.motionHazard = subpath->motionHazard;
 	pathnode->cdb_strict = false;
 	pathnode->path.rescannable = true; /* Independent of sub-path */
 	pathnode->path.sameslice_relids = subpath->sameslice_relids;
@@ -2342,7 +2332,6 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	if (pathnode->umethod == UNIQUE_PATH_HASH)
 	{
 		/* hybrid hash agg is not rescannable, and may present a motion hazard */
-		pathnode->path.motionHazard = subpath->motionHazard;
 		pathnode->path.rescannable = false;
 	}
 	else
@@ -2351,8 +2340,6 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		 *  (NB: Must not reset motionHazard when sort is eliminated due to
 		 *  existing ordering; but Unique sort is never optimized away at present.)
 		 */
-		pathnode->path.motionHazard = subpath->motionHazard;
-
 		/* Same reasoning applies to rescanablilty.  If no actual sort is placed
 		 * in the plan, then rescannable is set correctly to the subpath value.
 		 * If sort intervenes, it should be set to true.  We depend
@@ -2610,7 +2597,6 @@ create_unique_rowid_path(PlannerInfo *root,
 	if (pathnode->umethod == UNIQUE_PATH_HASH)
 	{
 		/* hybrid hash agg is not rescannable, and may present a motion hazard */
-		pathnode->path.motionHazard = subpath->motionHazard;
 		pathnode->path.rescannable = false;
 	}
 	else
@@ -2619,7 +2605,6 @@ create_unique_rowid_path(PlannerInfo *root,
 		 *  (NB: Must not reset motionHazard when sort is eliminated due to
 		 *  existing ordering; but Unique sort is never optimized away at present.)
 		 */
-		pathnode->path.motionHazard = subpath->motionHazard;
 
 		/* Same reasoning applies to rescanablilty.  If no actual sort is placed
 		 * in the plan, then rescannable is set correctly to the subpath value.
@@ -2790,7 +2775,6 @@ create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->subpath = subpath;
 
 	pathnode->path.locus = locus;
-	pathnode->path.motionHazard = subpath->motionHazard;
 	pathnode->path.rescannable = false;
 	pathnode->path.sameslice_relids = NULL;
 
@@ -2966,7 +2950,6 @@ create_functionscan_path(PlannerInfo *root, RelOptInfo *rel,
 	else
 		CdbPathLocus_MakeEntry(&pathnode->locus);
 
-	pathnode->motionHazard = false;
 
 	/*
 	 * FunctionScan is always rescannable. It uses a tuplestore to
@@ -3013,7 +2996,6 @@ create_tablefunction_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.pathkeys	   = NIL;		/* no way to specify output ordering */
 	pathnode->subpath = subpath;
 
-	pathnode->path.motionHazard = true;      /* better safe than sorry */
 	pathnode->path.rescannable  = false;     /* better safe than sorry */
 
 	/*
@@ -3101,7 +3083,6 @@ create_valuesscan_path(PlannerInfo *root, RelOptInfo *rel,
 		CdbPathLocus_MakeGeneral(&pathnode->locus);
 	}
 
-	pathnode->motionHazard = false;
 	pathnode->rescannable = true;
 	pathnode->sameslice_relids = NULL;
 
@@ -3144,7 +3125,6 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel,
 	 * GPDB_96_MERGE_FIXME: we do have the subpath, at least if it's not a
 	 * shared cte
 	 */
-	pathnode->motionHazard = true;
 	pathnode->rescannable = false;
 	pathnode->sameslice_relids = NULL;
 
@@ -3300,7 +3280,6 @@ create_worktablescan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->pathkeys = NIL;	/* result is always unordered */
 
 	pathnode->locus = result;
-	pathnode->motionHazard = false;
 	pathnode->rescannable = true;
 	pathnode->sameslice_relids = rel->relids;
 
@@ -3688,11 +3667,11 @@ create_nestloop_path(PlannerInfo *root,
 		 * fully fetch the underlying (required to avoid our
 		 * deadlock hazard) we must set cdb_strict!
 		 */
-		if (inner_path->motionHazard && outer_path->motionHazard)
-		{
-			matinner->cdb_strict = true;
-			matinner->path.motionHazard = false;
-		}
+		// if (inner_path->motionHazard && outer_path->motionHazard)
+		// {
+		// 	matinner->cdb_strict = true;
+		// 	matinner->path.motionHazard = false;
+		// }
 
 		inner_path = (Path *) matinner;
 	}
@@ -3749,7 +3728,6 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->joinrestrictinfo = restrict_clauses;
 
 	pathnode->path.locus = join_locus;
-	pathnode->path.motionHazard = outer_path->motionHazard || inner_path->motionHazard;
 
 	/* we're only as rescannable as our child plans */
 	pathnode->path.rescannable = outer_path->rescannable && inner_path->rescannable;
@@ -3934,7 +3912,6 @@ create_mergejoin_path(PlannerInfo *root,
 
 	pathnode->jpath.path.locus = join_locus;
 
-	pathnode->jpath.path.motionHazard = outer_path->motionHazard || inner_path->motionHazard;
 	pathnode->jpath.path.rescannable = outer_path->rescannable && inner_path->rescannable;
 	pathnode->jpath.path.sameslice_relids = bms_union(inner_path->sameslice_relids, outer_path->sameslice_relids);
 
@@ -4103,10 +4080,10 @@ create_hashjoin_path(PlannerInfo *root,
 	pathnode->jpath.path.rescannable = outer_path->rescannable && inner_path->rescannable;
 
 	/* see the comment above; we may have a motion hazard on our inner ?! */
-	if (pathnode->jpath.path.rescannable)
-		pathnode->jpath.path.motionHazard = outer_path->motionHazard;
-	else
-		pathnode->jpath.path.motionHazard = outer_path->motionHazard || inner_path->motionHazard;
+	// if (pathnode->jpath.path.rescannable)
+	// 	pathnode->jpath.path.motionHazard = outer_path->motionHazard;
+	// else
+	// 	pathnode->jpath.path.motionHazard = outer_path->motionHazard || inner_path->motionHazard;
 	pathnode->jpath.path.sameslice_relids = bms_union(inner_path->sameslice_relids, outer_path->sameslice_relids);
 
 	/*
