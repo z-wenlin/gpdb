@@ -5129,6 +5129,7 @@ create_mergejoin_plan(PlannerInfo *root,
 	 *
 	 * See motion_sanity_walker() for details on how a deadlock may occur.
 	 */
+	//TODO: spike for motion hazard, will add one more material node without the check.
 	// if (best_path->jpath.outerjoinpath->motionHazard && best_path->jpath.innerjoinpath->motionHazard)
 	// {
 	prefetch = true;

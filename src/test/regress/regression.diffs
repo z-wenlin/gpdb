@@ -1,0 +1,112 @@
+diff -I HINT: -I CONTEXT: -I GP_IGNORE: -U3 /home/gpadmin/workspace/gpdb6/src/test/regress/expected/join.out /home/gpadmin/workspace/gpdb6/src/test/regress/results/join.out
+--- /home/gpadmin/workspace/gpdb6/src/test/regress/expected/join.out	2023-07-04 16:16:51.530050896 +0800
++++ /home/gpadmin/workspace/gpdb6/src/test/regress/results/join.out	2023-07-04 16:16:51.729052569 +0800
+@@ -2309,17 +2309,16 @@
+                ->  Aggregate
+                      ->  Gather Motion 3:1  (slice3; segments: 3)
+                            ->  Seq Scan on int4_tbl i4b
+-         ->  Materialize
+-               ->  Nested Loop
+-                     Join Filter: ((sum(i4b.f1)) = ((sum(i4a.f1) + 1)))
+-                     ->  Materialize
+-                           ->  Broadcast Motion 1:3  (slice4; segments: 1)
+-                                 ->  Aggregate
+-                                       ->  Gather Motion 3:1  (slice5; segments: 3)
+-                                             ->  Seq Scan on int4_tbl i4a
+-                     ->  Index Only Scan using tenk1_thous_tenthous on tenk1 t
+-                           Index Cond: ((thousand = (sum(i4b.f1))) AND (tenthous = ((((sum(i4a.f1) + 1)) + (sum(i4b.f1))) + 999)))
+-GP_IGNORE:(17 rows)
++         ->  Nested Loop
++               Join Filter: ((sum(i4b.f1)) = ((sum(i4a.f1) + 1)))
++               ->  Materialize
++                     ->  Broadcast Motion 1:3  (slice4; segments: 1)
++                           ->  Aggregate
++                                 ->  Gather Motion 3:1  (slice5; segments: 3)
++                                       ->  Seq Scan on int4_tbl i4a
++               ->  Index Only Scan using tenk1_thous_tenthous on tenk1 t
++                     Index Cond: ((thousand = (sum(i4b.f1))) AND (tenthous = ((((sum(i4a.f1) + 1)) + (sum(i4b.f1))) + 999)))
++GP_IGNORE:(16 rows)
+ 
+ select a.f1, b.f1, t.thousand, t.tenthous from
+   tenk1 t,
+@@ -3250,15 +3245,14 @@
+          ->  Broadcast Motion 3:3  (slice2; segments: 3)
+                ->  Seq Scan on int8_tbl b
+                      Filter: (q2 = 2)
+-         ->  Materialize
+-               ->  Nested Loop
+-                     ->  Materialize
+-                           ->  Broadcast Motion 3:3  (slice3; segments: 3)
+-                                 ->  Seq Scan on int8_tbl a
+-                                       Filter: (q2 = 1)
+-                     ->  Index Scan using tenk1_thous_tenthous on tenk1
+-                           Index Cond: ((thousand = a.q1) AND (tenthous = b.q1))
+-GP_IGNORE:(14 rows)
++         ->  Nested Loop
++               ->  Materialize
++                     ->  Broadcast Motion 3:3  (slice3; segments: 3)
++                           ->  Seq Scan on int8_tbl a
++                                 Filter: (q2 = 1)
++               ->  Index Scan using tenk1_thous_tenthous on tenk1
++                     Index Cond: ((thousand = a.q1) AND (tenthous = b.q1))
++GP_IGNORE:(13 rows)
+ 
+ reset enable_nestloop;
+ --
+@@ -6548,8 +6378,9 @@
+          Merge Cond: (j1.id1 = j2.id1)
+          Join Filter: (j1.id2 = j2.id2)
+          ->  Index Scan using j1_id1_idx on j1
+-         ->  Index Scan using j2_id1_idx on j2
+-GP_IGNORE:(7 rows)
++         ->  Materialize
++               ->  Index Scan using j2_id1_idx on j2
++GP_IGNORE:(8 rows)
+ 
+ select * from j1
+ inner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2
+diff -I HINT: -I CONTEXT: -I GP_IGNORE: -U3 /home/gpadmin/workspace/gpdb6/src/test/regress/expected/join_hash.out /home/gpadmin/workspace/gpdb6/src/test/regress/results/join_hash.out
+--- /home/gpadmin/workspace/gpdb6/src/test/regress/expected/join_hash.out	2023-07-04 16:17:07.753187296 +0800
++++ /home/gpadmin/workspace/gpdb6/src/test/regress/results/join_hash.out	2023-07-04 16:17:07.792187624 +0800
+@@ -625,7 +625,7 @@
+ $$);
+  multibatch 
+ ------------
+- t
++ f
+ (1 row)
+ 
+ rollback to settings;
+@@ -734,7 +734,7 @@
+ $$);
+  multibatch 
+ ------------
+- t
++ f
+ (1 row)
+ 
+ rollback to settings;
+diff -I HINT: -I CONTEXT: -I GP_IGNORE: -U3 /home/gpadmin/workspace/gpdb6/src/test/regress/expected/select_parallel.out /home/gpadmin/workspace/gpdb6/src/test/regress/results/select_parallel.out
+--- /home/gpadmin/workspace/gpdb6/src/test/regress/expected/select_parallel.out	2023-07-04 16:17:20.848297397 +0800
++++ /home/gpadmin/workspace/gpdb6/src/test/regress/results/select_parallel.out	2023-07-04 16:17:20.892297767 +0800
+@@ -564,7 +564,7 @@
+                      ->  Seq Scan on tenk2 (actual rows=5 loops=1)
+                            Filter: (thousand = 0)
+                            Rows Removed by Filter: 3363
+-                     ->  Materialize (actual rows=9800 loops=5)
++                     ->  Materialize (actual rows=8167 loops=6)
+                            ->  Broadcast Motion 3:3  (slice2; segments: 3) (actual rows=9800 loops=1)
+                                  ->  Seq Scan on tenk1 (actual rows=3320 loops=1)
+                                        Filter: (hundred > 1)
+@@ -627,8 +627,9 @@
+                ->  Merge Join
+                      Merge Cond: (tenk1.unique1 = tenk2.unique1)
+                      ->  Index Only Scan using tenk1_unique1 on tenk1
+-                     ->  Index Only Scan using tenk2_unique1 on tenk2
+-GP_IGNORE:(8 rows)
++                     ->  Materialize
++                           ->  Index Only Scan using tenk2_unique1 on tenk2
++GP_IGNORE:(9 rows)
+ 
+ select  count(*) from tenk1, tenk2 where tenk1.unique1 = tenk2.unique1;
+  count 
