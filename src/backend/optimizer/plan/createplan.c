@@ -5003,7 +5003,7 @@ create_mergejoin_plan(PlannerInfo *root,
 	List	   *otherclauses;
 	List	   *mergeclauses;
 	bool		prefetch = false;
-	bool		set_mat_cdb_strict = false;
+	//bool		set_mat_cdb_strict = false;
 	List	   *outerpathkeys;
 	List	   *innerpathkeys;
 	int			nClauses;
@@ -5132,13 +5132,13 @@ create_mergejoin_plan(PlannerInfo *root,
 	//TODO: spike for motion hazard, will add one more material node without the check.
 	// if (best_path->jpath.outerjoinpath->motionHazard && best_path->jpath.innerjoinpath->motionHazard)
 	// {
-	prefetch = true;
-	if (!IsA(inner_plan, Sort))
-	{
-		if (!IsA(inner_plan, Material))
-			best_path->materialize_inner = true;
-		set_mat_cdb_strict = true;
-	}
+	// prefetch = true;
+	// if (!IsA(inner_plan, Sort))
+	// {
+	// 	if (!IsA(inner_plan, Material))
+	// 		best_path->materialize_inner = true;
+	// 	set_mat_cdb_strict = true;
+	// }
 	// }
 
 	/*
@@ -5162,8 +5162,8 @@ create_mergejoin_plan(PlannerInfo *root,
 		inner_plan = matplan;
 	}
 
-	if (set_mat_cdb_strict)
-		((Material *) inner_plan)->cdb_strict = true;
+	// if (set_mat_cdb_strict)
+	// 	((Material *) inner_plan)->cdb_strict = true;
 
 	/*
 	 * Compute the opfamily/collation/strategy/nullsfirst arrays needed by the
