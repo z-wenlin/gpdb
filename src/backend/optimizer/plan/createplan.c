@@ -4870,7 +4870,7 @@ create_nestloop_plan(PlannerInfo *root,
 	 * we aren't finished.
 	 */
 	//TODO: spike for motion hazard 1st. join.out
-	if (!best_path->innerjoinpath->rescannable)
+	if (!best_path->innerjoinpath->rescannable || cdbpath_contains_motion(best_path->innerjoinpath))
 	{
 		Plan	   *p;
 		Material   *mat;
@@ -4908,11 +4908,11 @@ create_nestloop_plan(PlannerInfo *root,
 		 * MPP-1657: Even if there is already a materialize here, we
 		 * may need to update its strictness.
 		 */
-		// if (best_path->outerjoinpath->motionHazard)
-		// {
-		mat->cdb_strict = true;
-		prefetch = true;
-		// }
+		if (cdbpath_contains_motion(best_path->outerjoinpath))
+		{
+			mat->cdb_strict = true;
+			prefetch = true;
+		}
 	}
 	
 	/* Restore curOuterRels */
@@ -8287,4 +8287,3 @@ append_initplan_for_function_scan(PlannerInfo *root, Path *best_path, Plan *plan
 	/* Decorate the top node of the plan with a Flow node. */
 	initplan->scan.plan.flow = cdbpathtoplan_create_flow(root, best_path->locus);
 }
-
