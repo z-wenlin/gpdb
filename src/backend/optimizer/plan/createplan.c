@@ -4869,8 +4869,7 @@ create_nestloop_plan(PlannerInfo *root,
 	 * NOTE: materialize_finished_plan() does *almost* what we want -- except
 	 * we aren't finished.
 	 */
-	//TODO: spike for motion hazard 1st. join.out
-	if (!best_path->innerjoinpath->rescannable)
+	if (!best_path->innerjoinpath->rescannable || cdbpath_contains_motion(best_path->innerjoinpath))
 	{
 		Plan	   *p;
 		Material   *mat;
@@ -4908,11 +4907,11 @@ create_nestloop_plan(PlannerInfo *root,
 		 * MPP-1657: Even if there is already a materialize here, we
 		 * may need to update its strictness.
 		 */
-		// if (best_path->outerjoinpath->motionHazard)
-		// {
-		mat->cdb_strict = true;
-		prefetch = true;
-		// }
+		if (cdbpath_contains_motion(best_path->outerjoinpath))
+		{
+			mat->cdb_strict = true;
+			prefetch = true;
+		}
 	}
 	
 	/* Restore curOuterRels */
@@ -5003,7 +5002,6 @@ create_mergejoin_plan(PlannerInfo *root,
 	List	   *otherclauses;
 	List	   *mergeclauses;
 	bool		prefetch = false;
-	bool		set_mat_cdb_strict = false;
 	List	   *outerpathkeys;
 	List	   *innerpathkeys;
 	int			nClauses;
@@ -5514,11 +5512,7 @@ create_hashjoin_plan(PlannerInfo *root,
 	 * (allowing us to check the outer for rows before building the
 	 * hash-table).
 	 */
-	//TODO: spike for motion hazard. without true prefetch_inner will be false and it will deadlock.
-	if (best_path->jpath.outerjoinpath == NULL || true)
-	{
-		join_plan->join.prefetch_inner = true;
-	}
+	join_plan->join.prefetch_inner = true;
 
 	/*
 	 * If we injected a partition selector to the inner side, we must evaluate

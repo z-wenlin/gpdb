@@ -2114,6 +2114,42 @@ cdbpath_contains_wts(Path *path)
 	return path->pathtype == T_WorkTableScan;
 }
 
+/*
+ * Does the path contain motion?
+ */
+bool
+cdbpath_contains_motion(Path *path)
+{
+	JoinPath   *joinPath;
+	AppendPath *appendPath;
+	ListCell   *lc;
+
+	if (IsJoinPath(path))
+	{
+		joinPath = (JoinPath *) path;
+		if (cdbpath_contains_motion(joinPath->outerjoinpath)
+			|| cdbpath_contains_motion(joinPath->innerjoinpath))
+			return true;
+		else
+			return false;
+	}
+	else if (IsA(path, AppendPath))
+	{
+		appendPath = (AppendPath *) path;
+		foreach(lc, appendPath->subpaths)
+		{
+			if (cdbpath_contains_motion((Path *) lfirst(lc)))
+				return true;
+		}
+		return false;
+	} else if(IsA(path, MaterialPath))
+	{
+		//if (cdbpath_contains_motion((Path *) lfirst(lc)))
+		return true;
+	}
+
+	return path->pathtype == T_Motion;
+}
 
 /*
  * has_redistributable_clause
