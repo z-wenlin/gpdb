@@ -2358,7 +2358,6 @@ typedef struct HashJoinState
 	bool		hj_MatchedOuter;
 	bool		hj_OuterNotEmpty;
 	bool		hj_InnerEmpty;  /* set to true if inner side is empty */
-	bool		prefetch_inner;
 	bool		hj_nonequijoin;
 
 	/* set if the operator created workfiles */

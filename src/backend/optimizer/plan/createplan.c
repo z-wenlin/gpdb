@@ -5022,8 +5022,6 @@ create_mergejoin_plan(PlannerInfo *root,
 	List	   *joinclauses;
 	List	   *otherclauses;
 	List	   *mergeclauses;
-	bool		prefetch = false;
-	bool		set_mat_cdb_strict = false;
 	List	   *outerpathkeys;
 	List	   *innerpathkeys;
 	int			nClauses;
@@ -5140,27 +5138,6 @@ create_mergejoin_plan(PlannerInfo *root,
 		innerpathkeys = best_path->jpath.innerjoinpath->pathkeys;
 
 	/*
-	 * MPP-3300: very similar to the nested-loop join motion deadlock cases. But we may have already
-	 * put some slackening operators below (e.g. a sort).
-	 *
-	 * We need some kind of strict slackening operator (something which consumes all of its
-	 * input before producing a row of output) for our inner. And we need to prefetch that side
-	 * first.
-	 *
-	 * See motion_sanity_walker() for details on how a deadlock may occur.
-	 */
-	if (best_path->jpath.outerjoinpath->motionHazard && best_path->jpath.innerjoinpath->motionHazard)
-	{
-		prefetch = true;
-		if (!IsA(inner_plan, Sort))
-		{
-			if (!IsA(inner_plan, Material))
-				best_path->materialize_inner = true;
-			set_mat_cdb_strict = true;
-		}
-	}
-
-	/*
 	 * If specified, add a materialize node to shield the inner plan from the
 	 * need to handle mark/restore.
 	 */
@@ -5179,10 +5156,8 @@ create_mergejoin_plan(PlannerInfo *root,
 		matplan->total_cost += cpu_operator_cost * matplan->plan_rows;
 
 		inner_plan = matplan;
-	}
-
-	if (set_mat_cdb_strict)
 		((Material *) inner_plan)->cdb_strict = true;
+	}
 
 	/*
 	 * Compute the opfamily/collation/strategy/nullsfirst arrays needed by the
@@ -5350,8 +5325,6 @@ create_mergejoin_plan(PlannerInfo *root,
 							   best_path->jpath.inner_unique,
 							   best_path->skip_mark_restore);
 
-	join_plan->join.prefetch_inner = prefetch;
-
 	/*
 	 * If we injected a partition selector to the inner side, we must evaluate
 	 * the inner side before the outer side, so that the partition selector
@@ -5386,7 +5359,6 @@ create_hashjoin_plan(PlannerInfo *root,
 	AttrNumber	skewColumn = InvalidAttrNumber;
 	bool		skewInherit = false;
 	ListCell   *lc;
-	bool		partition_selectors_created;
 
 	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
@@ -5404,8 +5376,7 @@ create_hashjoin_plan(PlannerInfo *root,
 	 * If the outer side contained Append nodes that can do partition pruning,
 	 * inject Partition Selectors to the inner side.
 	 */
-	partition_selectors_created =
-		pop_and_inject_partition_selectors(root, &best_path->jpath);
+	pop_and_inject_partition_selectors(root, &best_path->jpath);
 
 	inner_plan = create_plan_recurse(root, best_path->jpath.innerjoinpath,
 									 CP_SMALL_TLIST);
@@ -5543,35 +5514,6 @@ create_hashjoin_plan(PlannerInfo *root,
 							  (Plan *) hash_plan,
 							  best_path->jpath.jointype,
 							  best_path->jpath.inner_unique);
-
-	/*
-	 * MPP-4635.  best_path->jpath.outerjoinpath may be NULL.
-	 * From the comment, it is adaptive nestloop join may cause this.
-	 */
-	/*
-	 * MPP-4165: we need to descend left-first if *either* of the
-	 * subplans have any motion.
-	 */
-	/*
-	 * MPP-3300: unify motion-deadlock prevention for all join types.
-	 * This allows us to undo the MPP-989 changes in nodeHashjoin.c
-	 * (allowing us to check the outer for rows before building the
-	 * hash-table).
-	 */
-	if (best_path->jpath.outerjoinpath == NULL ||
-		best_path->jpath.outerjoinpath->motionHazard ||
-		best_path->jpath.innerjoinpath->motionHazard)
-	{
-		join_plan->join.prefetch_inner = true;
-	}
-
-	/*
-	 * If we injected a partition selector to the inner side, we must evaluate
-	 * the inner side before the outer side, so that the partition selector
-	 * can influence the execution of the outer side.
-	 */
-	if (partition_selectors_created)
-		join_plan->join.prefetch_inner = true;
 
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);
 

@@ -668,16 +668,9 @@ ExecMergeJoin_guts(PlanState *pstate)
 	ResetExprContext(econtext);
 
 	/*
-	 * MPP-4165: My fix for MPP-3300 was correct in that we avoided
-	 * the *deadlock* but had very unexpected (and painful)
-	 * performance characteristics: we basically de-pipeline and
-	 * de-parallelize execution of any query which has motion below
-	 * us.
-	 *
-	 * So now prefetch_inner is set (see createplan.c) if we have *any* motion
-	 * below us. If we don't have any motion, it doesn't matter.
-	 *
-	 * See motion_sanity_walker() for details on how a deadlock may occur.
+	 * Merge join requires inner and outer are ordered, if there are motions
+	 * in it, it should have sort node, therefore the motion deadlock won't happen. 
+	 * But there is one case still use prefetch_inner, which is partition_selectors_created. 
 	 */
 	if (node->prefetch_inner)
 	{
