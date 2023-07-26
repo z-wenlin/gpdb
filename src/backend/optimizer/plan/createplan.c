@@ -5037,7 +5037,6 @@ create_mergejoin_plan(PlannerInfo *root,
 	ListCell   *lip;
 	Path	   *outer_path = best_path->jpath.outerjoinpath;
 	Path	   *inner_path = best_path->jpath.innerjoinpath;
-	bool		partition_selectors_created;
 
 	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
@@ -5054,8 +5053,7 @@ create_mergejoin_plan(PlannerInfo *root,
 	 * If the outer side contained Append nodes that can do partition pruning,
 	 * inject Partition Selectors to the inner side.
 	 */
-	partition_selectors_created =
-		pop_and_inject_partition_selectors(root, &best_path->jpath);
+	pop_and_inject_partition_selectors(root, &best_path->jpath);
 
 	inner_plan = create_plan_recurse(root, best_path->jpath.innerjoinpath,
 									 (best_path->innersortkeys != NIL) ? CP_SMALL_TLIST : 0);
@@ -5324,14 +5322,6 @@ create_mergejoin_plan(PlannerInfo *root,
 							   best_path->jpath.jointype,
 							   best_path->jpath.inner_unique,
 							   best_path->skip_mark_restore);
-
-	/*
-	 * If we injected a partition selector to the inner side, we must evaluate
-	 * the inner side before the outer side, so that the partition selector
-	 * can influence the execution of the outer side.
-	 */
-	if (partition_selectors_created)
-		join_plan->join.prefetch_inner = true;
 
 	/* Costs of sort and material steps are included in path cost already */
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);

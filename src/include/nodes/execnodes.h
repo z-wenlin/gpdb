@@ -2302,7 +2302,6 @@ typedef struct MergeJoinState
 	TupleTableSlot *mj_NullInnerTupleSlot;
 	ExprContext *mj_OuterEContext;
 	ExprContext *mj_InnerEContext;
-	bool		prefetch_inner; /* MPP-3300 */
 } MergeJoinState;
 
 /* ----------------

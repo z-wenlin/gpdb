@@ -670,8 +670,9 @@ ExecMergeJoin_guts(PlanState *pstate)
 	/*
 	 * Merge join requires inner and outer are ordered, if there are motions
 	 * in it, it should have sort node, therefore the motion deadlock won't happen. 
-	 * But there is one case still use prefetch_inner, which is partition_selectors_created. 
+	 * Disable the following codes.
 	 */
+#if 0
 	if (node->prefetch_inner)
 	{
 		innerTupleSlot = ExecProcNode(innerPlan);
@@ -681,6 +682,15 @@ ExecMergeJoin_guts(PlanState *pstate)
 		ResetExprContext(econtext);
 
 		node->prefetch_inner = false;
+	}
+#endif
+	if (node->mj_JoinState == EXEC_MJ_INITIALIZE_OUTER)
+	{
+		innerTupleSlot = ExecProcNode(innerPlan);
+		node->mj_InnerTupleSlot = innerTupleSlot;
+
+		ExecReScan(innerPlan);
+		ResetExprContext(econtext);
 	}
 
 	/*
@@ -1557,11 +1567,8 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 	mergestate->mj_OuterEContext = CreateExprContext(estate);
 	mergestate->mj_InnerEContext = CreateExprContext(estate);
 
-
-	mergestate->prefetch_inner = node->join.prefetch_inner;
-
 	/* Prepare inner operators for rewind after the prefetch */
-	rewindflag = mergestate->prefetch_inner ? EXEC_FLAG_REWIND : 0;
+	rewindflag = EXEC_FLAG_REWIND;
 
     /*
      * initialize child nodes
