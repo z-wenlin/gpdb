@@ -1128,13 +1128,6 @@ create_join_plan(PlannerInfo *root, JoinPath *best_path)
 			break;
 	}
 
-	/* CDB: if the join's locus is bottleneck which means the
-	 * join gang only contains one process, so there is no
-	 * risk for motion deadlock.
-	 */
-	if (CdbPathLocus_IsBottleneck(best_path->path.locus))
-		((Join *) plan)->prefetch_inner = false;
-
 	/*
 	 * If there are any pseudoconstant clauses attached to this node, insert a
 	 * gating Result node that evaluates the pseudoconstants as one-time
@@ -5037,6 +5030,7 @@ create_mergejoin_plan(PlannerInfo *root,
 	ListCell   *lip;
 	Path	   *outer_path = best_path->jpath.outerjoinpath;
 	Path	   *inner_path = best_path->jpath.innerjoinpath;
+	bool		partition_selectors_created;
 
 	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
@@ -5053,7 +5047,8 @@ create_mergejoin_plan(PlannerInfo *root,
 	 * If the outer side contained Append nodes that can do partition pruning,
 	 * inject Partition Selectors to the inner side.
 	 */
-	pop_and_inject_partition_selectors(root, &best_path->jpath);
+	partition_selectors_created =
+		pop_and_inject_partition_selectors(root, &best_path->jpath);
 
 	inner_plan = create_plan_recurse(root, best_path->jpath.innerjoinpath,
 									 (best_path->innersortkeys != NIL) ? CP_SMALL_TLIST : 0);
@@ -5322,6 +5317,8 @@ create_mergejoin_plan(PlannerInfo *root,
 							   best_path->jpath.jointype,
 							   best_path->jpath.inner_unique,
 							   best_path->skip_mark_restore);
+	
+	join_plan->partition_selectors_created = partition_selectors_created;
 
 	/* Costs of sort and material steps are included in path cost already */
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);

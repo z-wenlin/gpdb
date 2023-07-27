@@ -684,13 +684,14 @@ ExecMergeJoin_guts(PlanState *pstate)
 		node->prefetch_inner = false;
 	}
 #endif
-	if (node->mj_JoinState == EXEC_MJ_INITIALIZE_OUTER)
+	if (node->partition_selectors_created)
 	{
 		innerTupleSlot = ExecProcNode(innerPlan);
 		node->mj_InnerTupleSlot = innerTupleSlot;
 
 		ExecReScan(innerPlan);
 		ResetExprContext(econtext);
+		node->partition_selectors_created = false;
 	}
 
 	/*
@@ -1568,7 +1569,8 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 	mergestate->mj_InnerEContext = CreateExprContext(estate);
 
 	/* Prepare inner operators for rewind after the prefetch */
-	rewindflag = EXEC_FLAG_REWIND;
+	mergestate->partition_selectors_created = node->partition_selectors_created;
+	rewindflag = mergestate->partition_selectors_created ? EXEC_FLAG_REWIND : 0;
 
     /*
      * initialize child nodes
