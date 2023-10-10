@@ -177,36 +177,22 @@ class CheckTables(connection):
         SELECT
         prelid,
         coll,
+        attname,
         parisdefault
         FROM 
-        might_affected_tables group by (prelid, coll, parisdefault)
+        might_affected_tables group by (prelid, coll, attname, parisdefault)
         )
-        select prelid::regclass::text as partitionname, coll, bool_or(parisdefault) as parhasdefault from par_has_default group by (prelid, coll) ;
+        select prelid::regclass::text as partitionname, coll, attname, bool_or(parisdefault) as parhasdefault from par_has_default group by (prelid, coll, attname) ;
         """
         tabs = db.query(sql).getresult()
         logger.info("There are {} partitioned tables in database {} that might be affected due to upgrade.".format(len(tabs), dbname))
         db.close()
         return tabs
-    
-    # Escape double-quotes in a string, so that the resulting string is suitable for
-    # embedding as in SQL. Analogouous to libpq's PQescapeIdentifier
-    def escape_identifier(self, str):
-        # Does the string need quoting? Simple strings with all-lower case ASCII
-        # letters don't.
-        SAFE_RE = re.compile('[a-z][a-z0-9_]*$')
-
-        if SAFE_RE.match(str):
-            return str
-
-        # Otherwise we have to quote it. Any double-quotes in the string need to be escaped
-        # by doubling them.
-        return '"' + str.replace('"', '""') + '"'
 
     def handle_one_table(self, name):
-        bakname = "%s" % (self.escape_identifier(name + "_bak"))
         sql = """
-begin; create temp table {1} as select * from {0}; truncate {0}; insert into {0} select * from {1}; commit;
-        """.format(name, bakname)
+        insert into {0} select * from {0};
+        """.format(name)
         return sql.strip()
 
     def dump_table_info(self, db, name):
@@ -260,20 +246,20 @@ begin; create temp table {1} as select * from {0}; truncate {0}; insert into {0}
             if parts:
                 print>>f, dbkeywords, dbname
             
-            for name, coll, has_default_partition in parts:
+            for name, coll, attname, has_default_partition in parts:
                 if has_default_partition == 'f':
                     logger.warning("no default partition for {}".format(name))
                 msg, size = self.dump_table_info(db, name)
-                table_info.append((name, coll, size, msg))
+                table_info.append((name, coll, attname, size, msg))
 
             if self.order_size_ascend:
-                table_info.sort(key=lambda x: x[2], reverse=False)
+                table_info.sort(key=lambda x: x[3], reverse=False)
             else:
-                table_info.sort(key=lambda x: x[2], reverse=True)
+                table_info.sort(key=lambda x: x[3], reverse=True)
 
-            for name, coll, size, msg in table_info:   
+            for name, coll, attname, size, msg in table_info:   
                 print>>f, "--", msg
-                print>>f, "-- name:", name, "| coll:", coll
+                print>>f, "-- name:", name, "| coll:", coll, "| attname:", attname
                 print>>f, self.handle_one_table(name)
                 print>>f
 
@@ -297,9 +283,7 @@ class ConcurrentRun(connection):
                 sql = line.strip()
                 if sql.startswith(dbkeywords):
                     db_name = sql.split(dbkeywords)[1].strip()
-                if (sql.startswith("reindex") and sql.endswith(";") and sql.count(";") == 1):
-                    self.dbdict[db_name].append(sql)
-                if (sql.startswith("begin;") and sql.endswith("commit;")):
+                if ((sql.startswith("reindex") or sql.startswith("insert")) and sql.endswith(";") and sql.count(";") == 1):
                     self.dbdict[db_name].append(sql)
 
     def init_worker(self):
@@ -331,26 +315,22 @@ def run_alter_command(db_name, port, host, user, command, current_idx, total_com
     try:
         db = DB(dbname=db_name, port=port, host=host, user=user)
         start = time.time()
+        db.query("set gp_detect_data_correctness = on;")
         logger.info("db: {}, executing command: {}".format(db_name, command))
         db.query(command)
 
-        if (command.startswith("begin")):
+        if (command.startswith("insert")):
             pieces = [p for p in re.split("( |\\\".*?\\\"|'.*?')", command) if p.strip()]
-            index = pieces.index("truncate")
-            if 0 < index < len(pieces) - 1:
-                table_name = pieces[index+1]
+            if len(pieces) > 2:
+                table_name = pieces[2]
                 analyze_sql = "analyze {};".format(table_name)
                 logger.info("db: {}, executing analyze command: {}".format(db_name, analyze_sql))
                 db.query(analyze_sql)
 
-        elif (command.startswith("reindex")):
-            c = command.strip().split()
-            if len(c) > 2:
-                table_name = c[2]
-
         end = time.time()
         total_time = end - start
         logger.info("Current worker {}: have {} remaining, {} seconds passed.".format(current_idx, total_commands - current_idx - 1, total_time))
+        db.query("set gp_detect_data_correctness = off;")
         db.close()
     except Exception, e:
         logger.error("{}".format(str(e)))
