@@ -1,4 +1,4 @@
-ckground
+# Background
 > PostgreSQL, and Greenplum, uses locale data provided by the operating system’s C library for sorting text. Sorting happens in a variety of contexts, including for user output, merge joins, B-tree indexes, and range partitions. In the latter two cases, sorted data is persisted to disk. If the locale data in the C library changes during the lifetime of a database, the persisted data may become inconsistent with the expected sort order, which could lead to erroneous query results and other incorrect behavior. For example, if an index is not sorted in a way that an index scan is expecting it, a query could fail to find data that is actually there, and an update could insert duplicate data that should be disallowed. Similarly, in a partitioned table, a query could look in the wrong partition and an update could write to the wrong partition. Therefore, it is essential to the correct operation of a database that the locale definitions do not change incompatibly during the lifetime of a database. This issue is well known and documented for PostgreSQL.
 
 see: <https://wiki.postgresql.org/wiki/Locale_data_changes>
