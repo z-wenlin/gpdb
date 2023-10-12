@@ -189,10 +189,25 @@ class CheckTables(connection):
         db.close()
         return tabs
 
+    # Escape double-quotes in a string, so that the resulting string is suitable for
+    # embedding as in SQL. Analogouous to libpq's PQescapeIdentifier
+    def escape_identifier(self, str):
+        # Does the string need quoting? Simple strings with all-lower case ASCII
+        # letters don't.
+        SAFE_RE = re.compile('[a-z][a-z0-9_]*$')
+
+        if SAFE_RE.match(str):
+            return str
+
+        # Otherwise we have to quote it. Any double-quotes in the string need to be escaped
+        # by doubling them.
+        return '"' + str.replace('"', '""') + '"'
+
     def handle_one_table(self, name):
+        bakname = "%s" % (self.escape_identifier(name + "_bak"))
         sql = """
-        insert into {0} select * from {0};
-        """.format(name)
+        begin; create temp table {1} as select * from {0}; truncate {0}; insert into {0} select * from {1}; commit;
+        """.format(name, bakname)
         return sql.strip()
 
     def dump_table_info(self, db, name):
@@ -238,30 +253,44 @@ class CheckTables(connection):
 
         for dbname in dblist:
             db = self.get_db_conn(dbname)
+            # get all the might-affected partitioned tables
+            tables = self.get_affected_partitioned_tables(dbname)
+
+            if tables:
+                print>>f, dbkeywords, dbname
 
             table_info = []
+            # filter the tables by GUC gp_detect_data_correctness, only dump the error tables to the output file
+            if len(tables) > 0:
+                try:
+                    db.query("set gp_detect_data_correctness = 1;")
+                except Exception as e:
+                    logger.warning("missing GUC gp_detect_data_correctness")
+                    db.close()
 
-            # partitioned tables
-            parts = self.get_affected_partitioned_tables(dbname)
-            if parts:
-                print>>f, dbkeywords, dbname
-            
-            for name, coll, attname, has_default_partition in parts:
-                if has_default_partition == 'f':
-                    logger.warning("no default partition for {}".format(name))
-                msg, size = self.dump_table_info(db, name)
-                table_info.append((name, coll, attname, size, msg))
+                for name, coll, attname, has_default_partition in tables:
+                    sql = "insert into {tab} select * from {tab}".format(tab=name)
+                    try:
+                        logger.info("start checking table {tab} ...".format(tab=name))
+                        db.query(sql)
+                        logger.info("check table {tab} OK.".format(tab=name))
+                    except Exception as e:
+                        logger.info("check table {tab} error out: {err_msg}".format(tab=name, err_msg=str(e)))
+                        if has_default_partition == 'f':
+                            logger.warning("no default partition for {}".format(name))
+                        msg, size = self.dump_table_info(db, name)
+                        table_info.append((name, coll, attname, size, msg))
 
-            if self.order_size_ascend:
-                table_info.sort(key=lambda x: x[3], reverse=False)
-            else:
-                table_info.sort(key=lambda x: x[3], reverse=True)
+                if self.order_size_ascend:
+                    table_info.sort(key=lambda x: x[3], reverse=False)
+                else:
+                    table_info.sort(key=lambda x: x[3], reverse=True)
 
-            for name, coll, attname, size, msg in table_info:   
-                print>>f, "--", msg
-                print>>f, "-- name:", name, "| coll:", coll, "| attname:", attname
-                print>>f, self.handle_one_table(name)
-                print>>f
+                for name, coll, attname, size, msg in table_info:   
+                    print>>f, "--", msg
+                    print>>f, "-- name:", name, "| coll:", coll, "| attname:", attname
+                    print>>f, self.handle_one_table(name)
+                    print>>f
 
         f.close()
 
@@ -283,7 +312,9 @@ class ConcurrentRun(connection):
                 sql = line.strip()
                 if sql.startswith(dbkeywords):
                     db_name = sql.split(dbkeywords)[1].strip()
-                if ((sql.startswith("reindex") or sql.startswith("insert")) and sql.endswith(";") and sql.count(";") == 1):
+                if (sql.startswith("reindex") and sql.endswith(";") and sql.count(";") == 1):
+                    self.dbdict[db_name].append(sql)
+                if (sql.startswith("begin;") and sql.endswith("commit;")):
                     self.dbdict[db_name].append(sql)
 
     def init_worker(self):
@@ -315,14 +346,14 @@ def run_alter_command(db_name, port, host, user, command, current_idx, total_com
     try:
         db = DB(dbname=db_name, port=port, host=host, user=user)
         start = time.time()
-        db.query("set gp_detect_data_correctness = on;")
         logger.info("db: {}, executing command: {}".format(db_name, command))
         db.query(command)
 
-        if (command.startswith("insert")):
+        if (command.startswith("begin")):
             pieces = [p for p in re.split("( |\\\".*?\\\"|'.*?')", command) if p.strip()]
-            if len(pieces) > 2:
-                table_name = pieces[2]
+            index = pieces.index("truncate")
+            if 0 < index < len(pieces) - 1:
+                table_name = pieces[index+1]
                 analyze_sql = "analyze {};".format(table_name)
                 logger.info("db: {}, executing analyze command: {}".format(db_name, analyze_sql))
                 db.query(analyze_sql)
@@ -330,7 +361,6 @@ def run_alter_command(db_name, port, host, user, command, current_idx, total_com
         end = time.time()
         total_time = end - start
         logger.info("Current worker {}: have {} remaining, {} seconds passed.".format(current_idx, total_commands - current_idx - 1, total_time))
-        db.query("set gp_detect_data_correctness = off;")
         db.close()
     except Exception, e:
         logger.error("{}".format(str(e)))
@@ -347,11 +377,11 @@ def parseargs():
     parser_precheck_table = subparsers.add_parser('precheck-table', help='list affected tables')
     parser_precheck_table.add_argument('--order_size_ascend', action='store_true', help='sort the tables by size in ascending order')
     parser_precheck_table.set_defaults(order_size_ascend=False)
-    parser_precheck_index.add_argument('--out', type=str, help='outfile path for the alter index commands', required=True)
-    parser_precheck_table.add_argument('--out', type=str, help='outfile path for the alter partition table commands', required=True)
+    parser_precheck_index.add_argument('--out', type=str, help='outfile path for the reindex commands', required=True)
+    parser_precheck_table.add_argument('--out', type=str, help='outfile path for the rebuild partition commands', required=True)
 
-    parser_run = subparsers.add_parser('run', help='run the re-index and the alter partition table cmds')
-    parser_run.add_argument('--input', type=str, help='the file contains reindex or alter partition table commands', required=True)
+    parser_run = subparsers.add_parser('postfix', help='postfix run the reindex and the rebuild partition commands')
+    parser_run.add_argument('--input', type=str, help='the file contains reindex or rebuild partition ccommandsmds', required=True)
     parser_run.add_argument('--nproc', type=int, default=1, help='the concurrent proces to run the commands')
 
     args = parser.parse_args()
@@ -372,7 +402,7 @@ if __name__ == "__main__":
         print "total table size (in GBytes) : %s" % (float(total_root_size) / 1024.0**3)
         print "total partition tables       : %s" % total_roots
         print "total leaf partitions        : %s" % total_leafs
-    elif args.cmd == 'run':
+    elif args.cmd == 'postfix':
         cr = ConcurrentRun(args.dbname, args.port, args.host, args.user, args.input, args.nproc)
         cr.run()
     else:
