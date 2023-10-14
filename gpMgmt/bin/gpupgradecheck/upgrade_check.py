@@ -4,7 +4,8 @@ import sys
 from pygresql.pg import DB
 import logging
 import signal
-from multiprocessing import Process, Pool
+from multiprocessing import Process, Pool, Queue
+from threading import Thread, Lock
 import time
 import string
 from collections import defaultdict
@@ -20,6 +21,17 @@ total_roots = 0
 total_root_size = 0
 
 dbkeywords = "-- DB name: "
+
+def sig_handler(sig, arg):
+    global procs
+    for proc in procs:
+        try:
+            proc.terminate()
+            proc.join()
+        except Exception as e:
+            sys.stderr.write("Error while terminating process: %s\n" % str(e))
+    sys.stderr.write("terminated by signal %s\n" % sig)
+    sys.exit(127)
 
 class connection(object):
     def __init__(self, host, port, dbname, user):
@@ -135,12 +147,20 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         f.close()
 
 class CheckTables(connection):
-    def __init__(self, host, port, dbname, user, order_size_ascend):
+    def __init__(self, host, port, dbname, user, order_size_ascend, nthread):
         self.host = host
         self.port = port
         self.dbname = dbname
         self.user = user
         self.order_size_ascend = order_size_ascend
+        self.nthread = nthread
+        self.filtertabs = []
+        self.filtertabslock = Lock()
+        self.total_leafs = 0
+        self.total_roots = 0
+        self.total_root_size = 0
+        self.lock = Lock()
+        self.qlist = Queue()
 
     def get_affected_partitioned_tables(self, dbname):
         db = self.get_db_conn(dbname)
@@ -182,7 +202,7 @@ class CheckTables(connection):
         FROM 
         might_affected_tables group by (prelid, coll, attname, parisdefault)
         )
-        select prelid::regclass::text as partitionname, coll, attname, bool_or(parisdefault) as parhasdefault from par_has_default group by (prelid, coll, attname) ;
+        select prelid, prelid::regclass::text as partitionname, coll, attname, bool_or(parisdefault) as parhasdefault from par_has_default group by (prelid, coll, attname) ;
         """
         tabs = db.query(sql).getresult()
         logger.info("There are {} partitioned tables in database {} that might be affected due to upgrade.".format(len(tabs), dbname))
@@ -210,98 +230,151 @@ class CheckTables(connection):
         """.format(name, bakname)
         return sql.strip()
 
-    def dump_table_info(self, db, name):
-        name = "%s" % (pg.escape_string(name))
+    def dump_table_info(self, dbname, parrelid):
+        db = self.get_db_conn(dbname)
         sql_size = """
         with recursive cte(nlevel, table_oid) as (
-            select 0, '{name}'::regclass::oid
+            select 0, {}::regclass::oid
             union all
             select nlevel+1, pi.inhrelid
             from cte, pg_inherits pi
             where cte.table_oid = pi.inhparent
         )
-        select sum(pg_relation_size(table_oid))
+        select sum(pg_relation_size(table_oid)) as size, count(1) as nleafs
         from cte where nlevel = (select max(nlevel) from cte);
         """
-        r = db.query(sql_size.encode('utf-8').format(name=name))
+        r = db.query(sql_size.format(parrelid))
         size = r.getresult()[0][0]
-        sql_nleafs = """
-        with recursive cte(nlevel, table_oid) as (
-            select 0, '{name}'::regclass::oid
-            union all
-            select nlevel+1, pi.inhrelid
-            from cte, pg_inherits pi
-            where cte.table_oid = pi.inhparent
-        )
-        select count(1)
-        from cte where nlevel = (select max(nlevel) from cte);
-        """
-        r = db.query(sql_nleafs.encode('utf-8').format(name=name))
-        nleafs = r.getresult()[0][0]
-        global total_leafs
-        global total_roots
-        global total_root_size
-        total_root_size += size
-        total_leafs += nleafs
-        total_roots += 1
+        nleafs = r.getresult()[0][1]
+        self.lock.acquire()
+        self.total_root_size += size
+        self.total_leafs += nleafs
+        self.total_roots += 1
+        self.lock.release()
+        db.close()
         return "partition table, %s leafs, size %s" % (nleafs, size), size
 
-    def dump(self, fn):
+    def dump_partition_tables(self, fn):
         dblist = self.get_db_list()
         f = open(fn, "w")
-        print>>f, "-- order table by size in %s order " % 'ascending' if self.order_size_ascend else '-- order table by size in descending order'
 
         for dbname in dblist:
-            db = self.get_db_conn(dbname)
             # get all the might-affected partitioned tables
             tables = self.get_affected_partitioned_tables(dbname)
 
+            for t in tables:
+                self.qlist.put(t)
+            
             if tables:
+                self.concurrent_check(dbname)
+
+            if self.filtertabs:
+                print>>f, "-- order table by size in %s order " % 'ascending' if self.order_size_ascend else '-- order table by size in descending order'
                 print>>f, dbkeywords, dbname
+                print>>f
 
-            table_info = []
-            # filter the tables by GUC gp_detect_data_correctness, only dump the error tables to the output file
-            if len(tables) > 0:
-                try:
-                    db.query("set gp_detect_data_correctness = 1;")
-                except Exception as e:
-                    logger.warning("missing GUC gp_detect_data_correctness")
-                    db.close()
-
-                for name, coll, attname, has_default_partition in tables:
-                    sql = "insert into {tab} select * from {tab}".format(tab=name)
-                    try:
-                        logger.info("start checking table {tab} ...".format(tab=name))
-                        db.query(sql)
-                        logger.info("check table {tab} OK.".format(tab=name))
-                    except Exception as e:
-                        logger.info("check table {tab} error out: {err_msg}".format(tab=name, err_msg=str(e)))
-                        if has_default_partition == 'f':
-                            logger.warning("no default partition for {}".format(name))
-                        msg, size = self.dump_table_info(db, name)
-                        table_info.append((name, coll, attname, size, msg))
-
+            # get the filter partition tables, sort it by size and dump table info into report
+            if self.filtertabs:
                 if self.order_size_ascend:
-                    table_info.sort(key=lambda x: x[3], reverse=False)
+                    self.filtertabs.sort(key=lambda x: x[-1], reverse=False)
                 else:
-                    table_info.sort(key=lambda x: x[3], reverse=True)
+                    self.filtertabs.sort(key=lambda x: x[-1], reverse=True)
 
-                for name, coll, attname, size, msg in table_info:   
-                    print>>f, "--", msg
-                    print>>f, "-- name:", name, "| coll:", coll, "| attname:", attname
-                    print>>f, self.handle_one_table(name)
-                    print>>f
+            for result in self.filtertabs:
+                parrelid = result[0]
+                name = result[1]
+                coll = result[2]
+                attname = result[3]
+                msg = result[4]
+                print>>f, "-- parrelid:", parrelid, "| coll:", coll, "| attname:", attname, "| msg:", msg
+                print>>f, self.handle_one_table(name)
+                print>>f
 
+            self.filtertabs = []
+        
+        logger.info("total table size (in GBytes) : {}".format(float(self.total_root_size) / 1024.0**3))
+        logger.info("total partition tables       : {}".format(self.total_roots))
+        logger.info("total leaf partitions        : {}".format(self.total_leafs))
         f.close()
 
-class ConcurrentRun(connection): 
-    def __init__(self, dbname, port, host, user, script_file, nproc):
+    def concurrent_check(self, dbname): 
+        threads = []
+        for i in range(self.nthread):
+            t = Thread(target=CheckTables.check_partitiontables_by_guc,
+                        args=[self, i, dbname])
+            threads.append(t)
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    @staticmethod
+    def check_partitiontables_by_guc(self, idx, dbname):
+        logger.info("worker[{}]: begin: ".format(idx))
+        logger.info("worker[{}]: connect to <{}> ...".format(idx, dbname))
+        start = time.time()
+        db = self.get_db_conn(dbname)
+        has_error = False
+
+        while not self.qlist.empty():
+            result = self.qlist.get()
+            parrelid = result[0]
+            tablename = result[1]
+            coll = result[2]
+            attname = result[3]
+            has_default_partition = result[4]
+            # filter the tables by GUC gp_detect_data_correctness, only dump the error tables to the output file
+            try:
+                db.query("set gp_detect_data_correctness = 1;")
+            except Exception as e:
+                logger.warning("missing GUC gp_detect_data_correctness")
+                db.close()
+
+            get_partitionname_sql = """
+            with recursive cte(root_oid, table_oid, nlevel) as (
+                select parrelid, parrelid, 0 from pg_partition where not paristemplate and parlevel = 0
+                union all
+                select root_oid,  pi.inhrelid, nlevel+1
+                from cte, pg_inherits pi
+                where cte.table_oid = pi.inhparent
+            )
+            select root_oid::regclass::text as tablename, table_oid::regclass::text as partitioname
+            from cte where nlevel = (select max(nlevel) from cte) and root_oid = {};
+            """
+            partitiontablenames = db.query(get_partitionname_sql.format(parrelid)).getresult()
+            for tablename, partitioname in partitiontablenames:
+                sql = "insert into {tab} select * from {tab}".format(tab=partitioname)
+                try:
+                    logger.info("start checking table {tab} ...".format(tab=partitioname))
+                    db.query(sql)
+                    logger.info("check table {tab} OK.".format(tab=partitioname))
+                except Exception as e:
+                    logger.info("check table {tab} error out: {err_msg}".format(tab=partitioname, err_msg=str(e)))
+                    has_errror = True;
+
+            if has_error or True:
+                msg, size = self.dump_table_info(dbname, parrelid)
+                self.filtertabslock.acquire()
+                self.filtertabs.append((parrelid, tablename, coll, attname, msg, size))
+                self.filtertabslock.release()
+                if has_default_partition == 'f':
+                    logger.warning("no default partition for {}".format(tablename))
+
+            db.query("set gp_detect_data_correctness = 0;")
+            
+        end = time.time()
+        total_time = end - start
+        logger.info("Current progress: have {} remaining, {} seconds passed.".format(self.qlist.qsize(), total_time))
+        db.close()
+        logger.info("worker[{}]: finish.".format(idx))
+
+class PostFix(connection): 
+    def __init__(self, dbname, port, host, user, script_file):
         self.dbname = dbname
         self.port = self._get_pg_port(port)
         self.host = host
         self.user = user
         self.script_file = script_file
-        self.nproc = nproc
         self.dbdict = defaultdict(list)
 
         self.parse_inputfile()
@@ -317,53 +390,36 @@ class ConcurrentRun(connection):
                 if (sql.startswith("begin;") and sql.endswith("commit;")):
                     self.dbdict[db_name].append(sql)
 
-    def init_worker(self):
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-
     def run(self):
-        pool = Pool(self.nproc, self.init_worker)
         try:
             for db_name, commands in self.dbdict.items():
                 total_counts = len(commands)
                 logger.info("db: {}, total have {} commands to execute".format(db_name, total_counts))
-                for index, command in enumerate(commands):
-                    pool.apply_async(run_alter_command, (db_name, self.port, self.host, self.user,
-                                                            command, index, total_counts)).get(1)
-            # close the process pool
-            pool.close()
-            # wait a moment
-            pool.join()
+                for command in commands:
+                    self.run_alter_command(db_name, command)
         except KeyboardInterrupt:
-            print("Caught KeyboardInterrupt, terminating workers")
-            pool.terminate()
-            pool.join()
             sys.exit('\nUser Interrupted')
 
         logger.info("All done")
 
-# since pickle for Python 2.7 could not pickle instance, just use function to apply.
-def run_alter_command(db_name, port, host, user, command, current_idx, total_commands):
-    try:
-        db = DB(dbname=db_name, port=port, host=host, user=user)
-        start = time.time()
-        logger.info("db: {}, executing command: {}".format(db_name, command))
-        db.query(command)
+    def run_alter_command(self, db_name, command):
+        try:
+            db = self.get_db_conn(db_name)
+            logger.info("db: {}, executing command: {}".format(db_name, command))
+            db.query(command)
 
-        if (command.startswith("begin")):
-            pieces = [p for p in re.split("( |\\\".*?\\\"|'.*?')", command) if p.strip()]
-            index = pieces.index("truncate")
-            if 0 < index < len(pieces) - 1:
-                table_name = pieces[index+1]
-                analyze_sql = "analyze {};".format(table_name)
-                logger.info("db: {}, executing analyze command: {}".format(db_name, analyze_sql))
-                db.query(analyze_sql)
+            if (command.startswith("begin")):
+                pieces = [p for p in re.split("( |\\\".*?\\\"|'.*?')", command) if p.strip()]
+                index = pieces.index("truncate")
+                if 0 < index < len(pieces) - 1:
+                    table_name = pieces[index+1]
+                    analyze_sql = "analyze {};".format(table_name)
+                    logger.info("db: {}, executing analyze command: {}".format(db_name, analyze_sql))
+                    db.query(analyze_sql)
 
-        end = time.time()
-        total_time = end - start
-        logger.info("Current worker {}: have {} remaining, {} seconds passed.".format(current_idx, total_commands - current_idx - 1, total_time))
-        db.close()
-    except Exception, e:
-        logger.error("{}".format(str(e)))
+            db.close()
+        except Exception, e:
+            logger.error("{}".format(str(e)))
 
 def parseargs():
     parser = argparse.ArgumentParser(prog='upgrade_check')
@@ -379,10 +435,10 @@ def parseargs():
     parser_precheck_table.set_defaults(order_size_ascend=False)
     parser_precheck_index.add_argument('--out', type=str, help='outfile path for the reindex commands', required=True)
     parser_precheck_table.add_argument('--out', type=str, help='outfile path for the rebuild partition commands', required=True)
+    parser_precheck_table.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables by using GUC')
 
     parser_run = subparsers.add_parser('postfix', help='postfix run the reindex and the rebuild partition commands')
     parser_run.add_argument('--input', type=str, help='the file contains reindex or rebuild partition ccommandsmds', required=True)
-    parser_run.add_argument('--nproc', type=int, default=1, help='the concurrent proces to run the commands')
 
     args = parser.parse_args()
     return args
@@ -397,13 +453,12 @@ if __name__ == "__main__":
         ci = CheckIndexes(args.host, args.port, args.dbname, args.user)
         ci.dump_index_info(args.out)
     elif args.cmd == 'precheck-table':
-        ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend)
-        ct.dump(args.out)
-        print "total table size (in GBytes) : %s" % (float(total_root_size) / 1024.0**3)
-        print "total partition tables       : %s" % total_roots
-        print "total leaf partitions        : %s" % total_leafs
+        signal.signal(signal.SIGTERM, sig_handler)
+        signal.signal(signal.SIGINT, sig_handler)
+        ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.nthread)
+        ct.dump_partition_tables(args.out)
     elif args.cmd == 'postfix':
-        cr = ConcurrentRun(args.dbname, args.port, args.host, args.user, args.input, args.nproc)
+        cr = PostFix(args.dbname, args.port, args.host, args.user, args.input)
         cr.run()
     else:
         sys.stderr.write("unknown subcommand!")
