@@ -4,7 +4,7 @@ import sys
 from pygresql.pg import DB
 import logging
 import signal
-from multiprocessing import Process, Pool, Queue
+from multiprocessing import Queue
 from threading import Thread, Lock
 import time
 import string
@@ -16,22 +16,7 @@ try:
 except ImportError, e:
     sys.exit('ERROR: Cannot import modules.  Please check that you have sourced greenplum_path.sh.  Detail: ' + str(e))
 
-total_leafs = 0
-total_roots = 0
-total_root_size = 0
-
 dbkeywords = "-- DB name: "
-
-def sig_handler(sig, arg):
-    global procs
-    for proc in procs:
-        try:
-            proc.terminate()
-            proc.join()
-        except Exception as e:
-            sys.stderr.write("Error while terminating process: %s\n" % str(e))
-    sys.stderr.write("terminated by signal %s\n" % sig)
-    sys.exit(127)
 
 class connection(object):
     def __init__(self, host, port, dbname, user):
@@ -161,6 +146,8 @@ class CheckTables(connection):
         self.total_root_size = 0
         self.lock = Lock()
         self.qlist = Queue()
+        signal.signal(signal.SIGTERM, self.sig_handler)
+        signal.signal(signal.SIGINT, self.sig_handler)
 
     def get_affected_partitioned_tables(self, dbname):
         db = self.get_db_conn(dbname)
@@ -297,7 +284,7 @@ class CheckTables(connection):
         logger.info("total leaf partitions        : {}".format(self.total_leafs))
         f.close()
 
-    def concurrent_check(self, dbname): 
+    def concurrent_check(self, dbname):
         threads = []
         for i in range(self.nthread):
             t = Thread(target=CheckTables.check_partitiontables_by_guc,
@@ -307,6 +294,10 @@ class CheckTables(connection):
             t.start()
         for t in threads:
             t.join()
+    
+    def sig_handler(self, sig, arg):
+        sys.stderr.write("terminated by signal %s\n" % sig)
+        sys.exit(127)
 
     @staticmethod
     def check_partitiontables_by_guc(self, idx, dbname):
@@ -352,7 +343,7 @@ class CheckTables(connection):
                     logger.info("check table {tab} error out: {err_msg}".format(tab=partitioname, err_msg=str(e)))
                     has_errror = True;
 
-            if has_error or True:
+            if has_error:
                 msg, size = self.dump_table_info(dbname, parrelid)
                 self.filtertabslock.acquire()
                 self.filtertabs.append((parrelid, tablename, coll, attname, msg, size))
@@ -453,8 +444,6 @@ if __name__ == "__main__":
         ci = CheckIndexes(args.host, args.port, args.dbname, args.user)
         ci.dump_index_info(args.out)
     elif args.cmd == 'precheck-table':
-        signal.signal(signal.SIGTERM, sig_handler)
-        signal.signal(signal.SIGINT, sig_handler)
         ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.nthread)
         ct.dump_partition_tables(args.out)
     elif args.cmd == 'postfix':
