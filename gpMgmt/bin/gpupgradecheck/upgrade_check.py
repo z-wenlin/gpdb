@@ -353,9 +353,10 @@ class CheckTables(connection):
 
             db.query("set gp_detect_data_correctness = 0;")
             
-        end = time.time()
-        total_time = end - start
-        logger.info("Current progress: have {} remaining, {} seconds passed.".format(self.qlist.qsize(), total_time))
+            end = time.time()
+            total_time = end - start
+            logger.info("Current progress: have {} remaining, {} seconds passed.".format(self.qlist.qsize(), total_time))
+
         db.close()
         logger.info("worker[{}]: finish.".format(idx))
 
