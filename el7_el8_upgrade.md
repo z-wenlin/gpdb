@@ -413,9 +413,10 @@ So rewrite the upper SQL and use the following one, it's in `get_affected_partit
     total partition tables       : 4
     total leaf partitions        : 12
     ```
+  
    Output file content:
-    ```
-    $ cat table.out
+```
+$ cat table.out  
 -- order table by size in descending order
 -- DB name:  test
 
@@ -427,10 +428,11 @@ begin; create temp table partition_range_test_3_bak as select * from partition_r
 
 -- parrelid: 17513 | coll: 100 | attname: date | msg: partition table, 4 leafs, size 98304
 begin; create temp table partition_range_test_4_bak as select * from partition_range_test_4; truncate partition_range_test_4; insert into partition_range_test_4 select * from partition_range_test_4_bak; commit;
-    ```
+```
 
-!!! New Update here !!!
-  For range-partitioned tables, based on the table lists getting from the upper SQLs, we filtered the partition tables lists again by using the GUC `gp_detect_data_correctness`, if check failed, then dump those tables info the output files.
+**New Update here**
+
+  For range-partitioned tables, based on the table lists getting from the upper SQLs, we filtered the partition tables lists again by using the GUC `gp_detect_data_correctness`, if the check failed, then dump those tables info the output files.
 
   The GUC comes from this PR https://github.com/greenplum-db/gpdb/pull/16367/files
 
@@ -466,7 +468,8 @@ Example usage:
 2023-09-11 10:32:44,981 - INFO - All done
 ```
 
-The main function are in `PostFix()`.
+The main function is in `PostFix()`.
 
-!!! New Update here !!!
+**New Update here**
+
 Before that, the `PostFix()` function are using multiple processes to run the alter commands. We changed it to use single process to avoid potential disk overhead.
