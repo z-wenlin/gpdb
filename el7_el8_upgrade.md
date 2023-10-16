@@ -413,23 +413,28 @@ So rewrite the upper SQL and use the following one, it's in `get_affected_partit
     total partition tables       : 4
     total leaf partitions        : 12
     ```
-  
+   Output file content:
     ```
     $ cat table.out
-  -- order table by size in descending order
-  -- DB name:  test
-  -- partition table, 3 leafs, size 32768
-  -- name: root | coll: 100 | attname: date
-  insert into root select * from root;
-  
-  -- partition table, 1 leafs, size 65536
-  -- name: test2 | coll: 100 | attname: date
-  insert into test2 select * from test2;
-  
-  -- partition table, 3 leafs, size 98304
-  -- name: partition_range_test_default | coll: 100 | attname: date
-  insert into partition_range_test_default select * from partition_range_test_default;
+-- order table by size in descending order
+-- DB name:  test
+
+-- parrelid: 17343 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
+begin; create temp table partition_range_test_1_bak as select * from partition_range_test_1; truncate partition_range_test_1; insert into partition_range_test_1 select * from partition_range_test_1_bak; commit;
+
+-- parrelid: 17485 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
+begin; create temp table partition_range_test_3_bak as select * from partition_range_test_3; truncate partition_range_test_3; insert into partition_range_test_3 select * from partition_range_test_3_bak; commit;
+
+-- parrelid: 17513 | coll: 100 | attname: date | msg: partition table, 4 leafs, size 98304
+begin; create temp table partition_range_test_4_bak as select * from partition_range_test_4; truncate partition_range_test_4; insert into partition_range_test_4 select * from partition_range_test_4_bak; commit;
     ```
+
+!!! New Update here !!!
+  For range-partitioned tables, based on the table lists getting from the upper SQLs, we filtered the partition tables lists again by using the GUC `gp_detect_data_correctness`, if check failed, then dump those tables info the output files.
+
+  The GUC comes from this PR https://github.com/greenplum-db/gpdb/pull/16367/files
+
+  Also, we are using multiple threads to do the checking.
   
 3. How to do the postcheck
 - For Indexes
@@ -444,7 +449,7 @@ So rewrite the upper SQL and use the following one, it's in `get_affected_partit
 
 Example usage:
 ```
-[gpadmin@cdw ~]$  python upgrade_check.py run --input table.out
+[gpadmin@cdw ~]$  python upgrade_check.py postfix --input table.out
 2023-09-11 10:32:43,478 - INFO - db: testupgrade, total have 4 commands to execute
 2023-09-11 10:32:43,484 - INFO - db: testupgrade, executing command: begin; create temp table partition_range_test_1_bak as select * from partition_range_test_1; truncate partition_range_test_1; insert into partition_range_test_1 select * from partition_range_test_1_bak; commit;
 2023-09-11 10:32:43,732 - INFO - db: testupgrade, executing analyze command: analyze partition_range_test_1;;
@@ -461,5 +466,7 @@ Example usage:
 2023-09-11 10:32:44,981 - INFO - All done
 ```
 
-The main function are in `ConcurrentRun()`.
+The main function are in `PostFix()`.
 
+!!! New Update here !!!
+Before that, the `PostFix()` function are using multiple processes to run the alter commands. We changed it to use single process to avoid potential disk overhead.
