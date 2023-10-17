@@ -455,9 +455,9 @@ def parseargs():
     parser_precheck_table.set_defaults(order_size_ascend=False)
     parser_precheck_index.add_argument('--out', type=str, help='outfile path for the reindex commands', required=True)
     parser_precheck_table.add_argument('--out', type=str, help='outfile path for the rebuild partition commands', required=True)
-    parser_precheck_table.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables by using GUC')
+    parser_precheck_table.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables')
 
-    parser_run = subparsers.add_parser('postfix', help='postfix run the reindex and the rebuild partition commands')
+    parser_run = subparsers.add_parser('postfix', help='run the reindex and the rebuild partition commands')
     parser_run.add_argument('--input', type=str, help='the file contains reindex or rebuild partition ccommandsmds', required=True)
 
     args = parser.parse_args()
