@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #!-*- coding: utf-8 -*-
 import argparse
 import sys
@@ -74,28 +75,28 @@ class CheckIndexes(connection):
         # The built-in collatable data types are text,varchar,and char, and the indcollation contains the OID of the collation 
         # to use for the index, or zero if the column is not of a collatable data type.
         sql = """
-        SELECT indexrelid::regclass::text, indrelid::regclass::text, coll, collname, pg_get_indexdef(indexrelid)
+        SELECT distinct(indexrelid), indexrelid::regclass::text as indexname, indrelid::regclass::text as tablename, collname, pg_get_indexdef(indexrelid)
 FROM (SELECT indexrelid, indrelid, indcollation[i] coll FROM pg_index, generate_subscripts(indcollation, 1) g(i)) s
 JOIN pg_collation c ON coll=c.oid
 WHERE collname != 'C' and collname != 'POSIX' and indexrelid >= 16384;
         """
         index = db.query(sql).getresult()
         if index:
-            logger.info("There are {} user indexes in database {} that might be affected due to upgrade.".format(len(index), dbname))
+            logger.info("There are {} user indexes in database {} that needs reindex when doing in-place upgrade from EL7->EL8.".format(len(index), dbname))
         db.close()
         return index
 
     def get_affected_catalog_indexes(self):
         db = self.get_default_db_conn()
         sql = """
-        SELECT indexrelid::regclass::text, indrelid::regclass::text, coll, collname, pg_get_indexdef(indexrelid)
+        SELECT distinct(indexrelid), indexrelid::regclass::text as indexname, indrelid::regclass::text as tablename, collname, pg_get_indexdef(indexrelid)
 FROM (SELECT indexrelid, indrelid, indcollation[i] coll FROM pg_index, generate_subscripts(indcollation, 1) g(i)) s
 JOIN pg_collation c ON coll=c.oid
 WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         """
         index = db.query(sql).getresult()
         if index:
-            logger.info("There are {} catalog indexes that might be affected due to upgrade.".format(len(index)))
+            logger.info("There are {} catalog indexes that needs reindex when doing in-place upgrade from EL7->EL8.".format(len(index)))
         db.close()
         return index
 
@@ -114,8 +115,8 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         cindex = self.get_affected_catalog_indexes()
         if cindex:
             print>>f, "-- DB name: ", self.dbname
-        for indexname, tablename, collate, collname, indexdef in cindex:
-            print>>f, "-- catalog index name:", indexname, "| table name:", tablename, "| collate:", collate, "| collname:", collname, "| indexdef: ", indexdef
+        for indexrelid, indexname, tablename, collname, indexdef in cindex:
+            print>>f, "-- catalog indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
             print>>f, self.handle_one_index(indexname)
             print>>f
 
@@ -124,8 +125,8 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
             index = self.get_affected_user_indexes(dbname)
             if index:
                 print>>f, "-- DB name: ", dbname
-            for indexname, tablename, collate, collname, indexdef in index:
-                print>>f, "-- index name:", indexname, "| table name:", tablename, "| collate:", collate, "| collname:", collname, "| indexdef: ", indexdef
+            for indexrelid, indexname, tablename, collname, indexdef in index:
+                print>>f, "-- indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
                 print>>f, self.handle_one_index(indexname)
                 print>>f
 
@@ -195,7 +196,7 @@ class CheckTables(connection):
         db.close()
         return tabs
 
-    # get the tables which distribution column is using customize operator class, it may be affected by the upgrade, so give a warning.
+    # get the tables which distribution column is using custom operator class, it may be affected by the in-place upgrade, so give a warning.
     def get_custom_opclass_as_distribute_keys_tables(self, dbname):
         db = self.get_db_conn(dbname)
         sql = """
@@ -203,7 +204,7 @@ class CheckTables(connection):
         """
         tables = db.query(sql).getresult()
         if tables:
-            logger.warning("There are {} tables in database {} that the distribution column use customize operator class:".format(len(tables), dbname))
+            logger.warning("There are {} tables in database {} that the distribution key is using custom operator class, should be checked when doing in-place upgrade from EL7->EL8.".format(len(tables), dbname))
             print "---------------------------------------------"
             print "tablename | distclass"
             for t in tables:
@@ -261,7 +262,7 @@ class CheckTables(connection):
         f = open(fn, "w")
 
         for dbname in dblist:
-            # check tables that the distribution columns are using customize operator class
+            # check tables that the distribution columns are using custom operator class
             self.get_custom_opclass_as_distribute_keys_tables(dbname)
 
             # get all the might-affected partitioned tables
@@ -269,7 +270,7 @@ class CheckTables(connection):
 
             # filter the tables again by checking with GUC, if check failed, add these tables to filtertabs
             if tables:
-                logger.info("There are {} partitioned tables in database {} that might be affected due to upgrade.".format(len(tables), dbname))
+                logger.info("There are {} partitioned tables in database {} that should be checked when doing in-place upgrade from EL7->EL8.".format(len(tables), dbname))
                 # qlist is used by multiple threads, start multiple threads to concurrent check these tables by using the GUC gp_detect_data_correctness
                 for t in tables:
                     self.qlist.put(t)
@@ -442,7 +443,7 @@ class PostFix(connection):
             logger.error("{}".format(str(e)))
 
 def parseargs():
-    parser = argparse.ArgumentParser(prog='upgrade_check')
+    parser = argparse.ArgumentParser(prog='upgrade_el8_locale_check')
     parser.add_argument('--host', type=str, help='Greenplum Database hostname')
     parser.add_argument('--port', type=int, help='Greenplum Database port')
     parser.add_argument('--dbname', type=str,  default='postgres', help='Greenplum Database database name')
@@ -450,15 +451,19 @@ def parseargs():
 
     subparsers = parser.add_subparsers(help='sub-command help', dest='cmd')
     parser_precheck_index = subparsers.add_parser('precheck-index', help='list affected index')
+    required = parser_precheck_index.add_argument_group('required arguments')
+    required.add_argument('--out', type=str, help='outfile path for the reindex commands', required=True)
+
     parser_precheck_table = subparsers.add_parser('precheck-table', help='list affected tables')
+    required = parser_precheck_table.add_argument_group('required arguments')
+    required.add_argument('--out', type=str, help='outfile path for the rebuild partition commands', required=True)
     parser_precheck_table.add_argument('--order_size_ascend', action='store_true', help='sort the tables by size in ascending order')
     parser_precheck_table.set_defaults(order_size_ascend=False)
-    parser_precheck_index.add_argument('--out', type=str, help='outfile path for the reindex commands', required=True)
-    parser_precheck_table.add_argument('--out', type=str, help='outfile path for the rebuild partition commands', required=True)
     parser_precheck_table.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables')
 
     parser_run = subparsers.add_parser('postfix', help='run the reindex and the rebuild partition commands')
-    parser_run.add_argument('--input', type=str, help='the file contains reindex or rebuild partition ccommandsmds', required=True)
+    required = parser_run.add_argument_group('required arguments')
+    required.add_argument('--input', type=str, help='the file contains reindex or rebuild partition commands', required=True)
 
     args = parser.parse_args()
     return args

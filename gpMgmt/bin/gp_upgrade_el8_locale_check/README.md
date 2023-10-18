@@ -1,12 +1,14 @@
-1. use `python upgrade_check.py precheck-index` to list affected indexes.
-2. use `python upgrade_check.py precheck-table` to list affected partitioned tables.
-3. use `python upgrade_check.py postfix` to run the reindex and alter partition table commands.
+1. use `python upgrade_el8_locale_check.py precheck-index` to list affected indexes.
+2. use `python upgrade_el8_locale_check.py precheck-table` to list affected partitioned tables.
+3. use `python upgrade_el8_locale_check.py postfix` to run the reindex and alter partition table commands.
+
+(Note: For easier reading, some example output is omitted with ellipses.)
 
 ```
-$ python upgrade_check.py --help
-usage: upgrade_check [-h] [--host HOST] [--port PORT] [--dbname DBNAME]
-                     [--user USER]
-                     {precheck-index,precheck-table,postfix} ...
+$ python upgrade_el8_locale_check.py --help
+usage: upgrade_el8_locale_check [-h] [--host HOST] [--port PORT]
+                                [--dbname DBNAME] [--user USER]
+                                {precheck-index,precheck-table,postfix} ...
 
 positional arguments:
   {precheck-index,precheck-table,postfix}
@@ -23,51 +25,57 @@ optional arguments:
   --user USER           Greenplum Database user name
 ```
 ```
-$ python upgrade_check.py precheck-index -h
-usage: upgrade_check precheck-index [-h] --out OUT
+$ python upgrade_el8_locale_check.py precheck-index --help
+usage: upgrade_el8_locale_check precheck-index [-h] --out OUT
 
 optional arguments:
   -h, --help  show this help message and exit
+
+required arguments:
   --out OUT   outfile path for the reindex commands
 
 Example usage:
 
-$ python upgrade_check.py precheck-index --out index.out
-2023-10-12 03:38:57,733 - INFO - There are 2 catalog indexes that might be affected due to upgrade.
-2023-10-12 03:38:57,826 - INFO - There are 7 user indexes in database testupgrade that might be affected due to upgrade.
+$ python upgrade_el8_locale_check.py precheck-index --out index.out
+2023-10-18 11:04:13,944 - INFO - There are 2 catalog indexes that needs reindex when doing in-place upgrade from EL7->EL8.
+2023-10-18 11:04:14,001 - INFO - There are 7 user indexes in database test that needs reindex when doing in-place upgrade from EL7->EL8.
 
 $ cat index.out
 -- DB name:  postgres
--- catalog index name: pg_seclabel_object_index | table name: pg_seclabel | collate: 100 | collname: default | indexdef:  CREATE UNIQUE INDEX pg_seclabel_object_index ON pg_catalog.pg_seclabel USING btree (objoid, classoid, objsubid, provider)
+-- catalog indexrelid: 3597 | index name: pg_seclabel_object_index | table name: pg_seclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_seclabel_object_index ON pg_catalog.pg_seclabel USING btree (objoid, classoid, objsubid, provider)
 reindex index pg_seclabel_object_index;
 
--- catalog index name: pg_shseclabel_object_index | table name: pg_shseclabel | collate: 100 | collname: default | indexdef:  CREATE UNIQUE INDEX pg_shseclabel_object_index ON pg_catalog.pg_shseclabel USING btree (objoid, classoid, provider)
+-- catalog indexrelid: 3593 | index name: pg_shseclabel_object_index | table name: pg_shseclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_shseclabel_object_index ON pg_catalog.pg_shseclabel USING btree (objoid, classoid, provider)
 reindex index pg_shseclabel_object_index;
 
--- DB name:  testupgrade
--- index name: test_id1 | table name: test_character_type | collate: 100 | collname: default | indexdef:  CREATE INDEX test_id1 ON public.test_character_type USING btree (char_1)
-reindex index test_id1;
+-- DB name:  test
+-- indexrelid: 16512 | index name: testupgrade.hash_idx1 | table name: testupgrade.hash_test1 | collname: default | indexdef:  CREATE INDEX hash_idx1 ON testupgrade.hash_test1 USING btree (content)
+reindex index testupgrade.hash_idx1;
 ...
 ```
 ```
-$ python upgrade_check.py precheck-table -h
-usage: upgrade_check precheck-table [-h] [--order_size_ascend] --out OUT
-                                    [--nthread NTHREAD]
+$ python upgrade_el8_locale_check.py precheck-table --help
+usage: upgrade_el8_locale_check precheck-table [-h] --out OUT
+                                               [--order_size_ascend]
+                                               [--nthread NTHREAD]
 
 optional arguments:
   -h, --help           show this help message and exit
   --order_size_ascend  sort the tables by size in ascending order
-  --out OUT            outfile path for the rebuild partition commands
   --nthread NTHREAD    the concurrent threads to check partition tables
 
+required arguments:
+  --out OUT            outfile path for the rebuild partition commands
+
 Example usage:
-$ python upgrade_check.py precheck-table --out table.out
-2023-10-16 04:12:19,064 - WARNING - There are 1 tables in database test that the distribution column use customize operator class:
+$ python upgrade_el8_locale_check.py precheck-table --out table.out
+2023-10-16 04:12:19,064 - WARNING - There are 2 tables in database test that the distribution key is using custom operator class, should be checked when doing in-place upgrade from EL7->EL8.
 ---------------------------------------------
 tablename | distclass
 ('testdiskey', 16397)
+('testupgrade.test_citext', 16454)
 ---------------------------------------------
-2023-10-16 04:12:19,064 - INFO - There are 6 partitioned tables in database testupgrade that might be affected due to upgrade.
+2023-10-16 04:12:19,064 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing in-place upgrade from EL7->EL8.
 2023-10-16 04:12:19,066 - INFO - worker[0]: begin:
 2023-10-16 04:12:19,066 - INFO - worker[0]: connect to <testupgrade> ...
 2023-10-16 04:12:19,110 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_mar ...
@@ -90,51 +98,50 @@ total partition tables       : 6
 total leaf partitions        : 19
 ---------------------------------------------
 
-Example Usage for using nthreads:
-$ python upgrade_check.py precheck-table --out table.out --nthread 3
-2023-10-16 04:15:54,812 - INFO - There are 6 partitioned tables in database testupgrade that might be affected due to upgrade.
-2023-10-16 04:15:54,813 - INFO - worker[0]: begin:
-2023-10-16 04:15:54,813 - INFO - worker[0]: connect to <testupgrade> ...
-2023-10-16 04:15:54,814 - INFO - worker[1]: begin:
-2023-10-16 04:15:54,814 - INFO - worker[1]: connect to <testupgrade> ...
-2023-10-16 04:15:54,814 - INFO - worker[2]: begin:
-2023-10-16 04:15:54,815 - INFO - worker[2]: connect to <testupgrade> ...
-2023-10-16 04:15:54,866 - INFO - start checking table testupgrade.partition_range_test_2_1_prt_mar ...
-2023-10-16 04:15:54,870 - INFO - start checking table testupgrade.partition_range_test_ao_1_prt_mar ...
-2023-10-16 04:15:54,879 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_mar ...
-2023-10-16 04:15:54,921 - INFO - check table testupgrade.partition_range_test_ao_1_prt_mar OK.
-2023-10-16 04:15:54,922 - INFO - start checking table testupgrade.partition_range_test_ao_1_prt_feb ...
-2023-10-16 04:15:54,926 - INFO - check table testupgrade.partition_range_test_3_1_prt_mar OK.
-2023-10-16 04:15:54,926 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_feb ...
-2023-10-16 04:15:54,949 - INFO - check table testupgrade.partition_range_test_3_1_prt_feb OK.
-2023-10-16 04:15:54,949 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_jan ...
-2023-10-16 04:15:54,971 - INFO - check table testupgrade.partition_range_test_3_1_prt_jan OK.
-2023-10-16 04:15:55,039 - WARNING - no default partition for testupgrade.partition_range_test_3
-2023-10-16 04:15:55,055 - INFO - start checking table testupgrade.partition_range_test_4_1_prt_mar ...
-2023-10-16 04:15:55,077 - INFO - check table testupgrade.partition_range_test_4_1_prt_mar OK.
-2023-10-16 04:15:55,078 - INFO - start checking table testupgrade.partition_range_test_4_1_prt_feb ...
-2023-10-16 04:15:55,098 - INFO - check table testupgrade.partition_range_test_4_1_prt_feb OK.
-2023-10-16 04:15:55,098 - INFO - start checking table testupgrade.partition_range_test_4_1_prt_jan ...
-2023-10-16 04:15:55,115 - INFO - check table testupgrade.partition_range_test_4_1_prt_jan OK.
-2023-10-16 04:15:55,115 - INFO - start checking table testupgrade.partition_range_test_4_1_prt_others ...
-2023-10-16 04:15:55,124 - INFO - check table testupgrade.partition_range_test_2_1_prt_mar error out: ERROR:  trying to insert row into wrong partition  (seg0 10.0.138.96:20000 pid=4084)
-DETAIL:  Expected partition: partition_range_test_2_1_prt_feb, provided partition: partition_range_test_2_1_prt_mar.
-...
-2023-10-16 04:15:55,430 - INFO - worker[0]: finish.
-2023-10-16 04:15:55,452 - INFO - check table testupgrade.partition_range_test_ao_1_prt_jan error out: ERROR:  no partition for partitioning key  (seg1 10.0.138.96:20001 pid=4079)
-
-2023-10-16 04:15:55,493 - WARNING - no default partition for testupgrade.partition_range_test_ao
-2023-10-16 04:15:55,495 - INFO - Current progress: have 0 remaining, 0.680027961731 seconds passed.
-2023-10-16 04:15:55,495 - INFO - worker[2]: finish.
-2023-10-16 04:15:55,544 - INFO - check table testupgrade.partition_range_test_2_1_prt_jan error out: ERROR:  no partition for partitioning key  (seg1 10.0.138.96:20001 pid=4083)
-
-2023-10-16 04:15:55,583 - WARNING - no default partition for testupgrade.partition_range_test_2
-2023-10-16 04:15:55,585 - INFO - Current progress: have 0 remaining, 0.770350933075 seconds passed.
-2023-10-16 04:15:55,585 - INFO - worker[1]: finish.
+Example Usage for using nthreads (check passed example):
+$ python upgrade_el8_locale_check.py precheck-table --out table.out --nthread 3
+2023-10-18 11:19:11,717 - INFO - There are 4 partitioned tables in database test that should be checked when doing in-place upgrade from EL7->EL8.
+2023-10-18 11:19:11,718 - INFO - worker[0]: begin:
+2023-10-18 11:19:11,718 - INFO - worker[0]: connect to <test> ...
+2023-10-18 11:19:11,718 - INFO - worker[1]: begin:
+2023-10-18 11:19:11,719 - INFO - worker[1]: connect to <test> ...
+2023-10-18 11:19:11,718 - INFO - worker[2]: begin:
+2023-10-18 11:19:11,719 - INFO - worker[2]: connect to <test> ...
+2023-10-18 11:19:11,744 - INFO - start checking table testupgrade.partition_range_test_1_1_prt_mar ...
+2023-10-18 11:19:11,745 - INFO - start checking table testupgrade.partition_range_test_ao_1_prt_mar ...
+2023-10-18 11:19:11,746 - INFO - start checking table testupgrade.partition_range_test_2_1_prt_mar ...
+2023-10-18 11:19:11,749 - INFO - check table testupgrade.partition_range_test_1_1_prt_mar OK.
+2023-10-18 11:19:11,749 - INFO - start checking table testupgrade.partition_range_test_1_1_prt_feb ...
+2023-10-18 11:19:11,751 - INFO - check table testupgrade.partition_range_test_ao_1_prt_mar OK.
+2023-10-18 11:19:11,751 - INFO - start checking table testupgrade.partition_range_test_ao_1_prt_feb ...
+2023-10-18 11:19:11,751 - INFO - check table testupgrade.partition_range_test_2_1_prt_mar OK.
+2023-10-18 11:19:11,751 - INFO - start checking table testupgrade.partition_range_test_2_1_prt_feb ...
+2023-10-18 11:19:11,752 - INFO - check table testupgrade.partition_range_test_1_1_prt_feb OK.
+2023-10-18 11:19:11,752 - INFO - start checking table testupgrade.partition_range_test_1_1_prt_others ...
+2023-10-18 11:19:11,754 - INFO - check table testupgrade.partition_range_test_2_1_prt_feb OK.
+2023-10-18 11:19:11,754 - INFO - start checking table testupgrade.partition_range_test_2_1_prt_jan ...
+2023-10-18 11:19:11,755 - INFO - check table testupgrade.partition_range_test_1_1_prt_others OK.
+2023-10-18 11:19:11,755 - INFO - check table testupgrade.partition_range_test_ao_1_prt_feb OK.
+2023-10-18 11:19:11,755 - INFO - start checking table testupgrade.partition_range_test_ao_1_prt_jan ...
+2023-10-18 11:19:11,756 - INFO - Current progress: have 1 remaining, 0.0373229980469 seconds passed.
+2023-10-18 11:19:11,757 - INFO - check table testupgrade.partition_range_test_2_1_prt_jan OK.
+2023-10-18 11:19:11,758 - INFO - Current progress: have 0 remaining, 0.0390849113464 seconds passed.
+2023-10-18 11:19:11,758 - INFO - worker[2]: finish.
+2023-10-18 11:19:11,761 - INFO - check table testupgrade.partition_range_test_ao_1_prt_jan OK.
+2023-10-18 11:19:11,761 - INFO - Current progress: have 0 remaining, 0.0425379276276 seconds passed.
+2023-10-18 11:19:11,761 - INFO - worker[1]: finish.
+2023-10-18 11:19:11,763 - INFO - start checking table testupgrade.root_1_prt_mar ...
+2023-10-18 11:19:11,766 - INFO - check table testupgrade.root_1_prt_mar OK.
+2023-10-18 11:19:11,767 - INFO - start checking table testupgrade.root_1_prt_feb ...
+2023-10-18 11:19:11,769 - INFO - check table testupgrade.root_1_prt_feb OK.
+2023-10-18 11:19:11,770 - INFO - start checking table testupgrade.root_1_prt_jan ...
+2023-10-18 11:19:11,772 - INFO - check table testupgrade.root_1_prt_jan OK.
+2023-10-18 11:19:11,773 - INFO - Current progress: have 0 remaining, 0.0547292232513 seconds passed.
+2023-10-18 11:19:11,773 - INFO - worker[0]: finish.
 ---------------------------------------------
-total table size (in GBytes) : 0.000396907329559
-total partition tables       : 6
-total leaf partitions        : 19
+total table size (in GBytes) : 0.0
+total partition tables       : 0
+total leaf partitions        : 0
 ---------------------------------------------
 
 $ cat table.out
@@ -147,15 +154,17 @@ begin; create temp table "testupgrade.partition_range_test_3_bak" as select * fr
 
 ```
 ```
-$ python upgrade_check.py postfix -h
-usage: upgrade_check postfix [-h] --input INPUT
+$ python upgrade_el8_locale_check.py postfix --help
+usage: upgrade_el8_locale_check postfix [-h] --input INPUT
 
 optional arguments:
   -h, --help     show this help message and exit
-  --input INPUT  the file contains reindex or rebuild partition ccommandsmds
+
+required arguments:
+  --input INPUT  the file contains reindex or rebuild partition commands
 
 Example usage for postfix index:
-$ python upgrade_check.py postfix --input index.out
+$ python upgrade_el8_locale_check.py postfix --input index.out
 2023-10-16 04:12:02,461 - INFO - db: testupgrade, total have 7 commands to execute
 2023-10-16 04:12:02,467 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_id1;
 2023-10-16 04:12:02,541 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_id2;
@@ -170,7 +179,7 @@ $ python upgrade_check.py postfix --input index.out
 2023-10-16 04:12:02,754 - INFO - All done
 
 Example usage for postfix tables:
-$ python upgrade_check.py postfix --input table.out
+$ python upgrade_el8_locale_check.py postfix --input table.out
 2023-10-16 04:14:17,003 - INFO - db: testupgrade, total have 6 commands to execute
 2023-10-16 04:14:17,009 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.partition_range_test_3_bak" as select * from testupgrade.partition_range_test_3; truncate testupgrade.partition_range_test_3; insert into testupgrade.partition_range_test_3 select * from "testupgrade.partition_range_test_3_bak"; commit;
 2023-10-16 04:14:17,175 - INFO - db: testupgrade, executing analyze command: analyze testupgrade.partition_range_test_3;;
@@ -188,4 +197,4 @@ $ python upgrade_check.py postfix --input table.out
 
 2023-10-16 04:14:18,277 - INFO - All done
 ```
-Note: For easier reading, some contents is omitted with ellipses.
+
