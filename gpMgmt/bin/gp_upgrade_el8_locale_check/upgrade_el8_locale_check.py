@@ -133,7 +133,7 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         f.close()
 
 class CheckTables(connection):
-    def __init__(self, host, port, dbname, user, order_size_ascend, nthread):
+    def __init__(self, host, port, dbname, user, order_size_ascend, nthread, pre_upgrade):
         self.host = host
         self.port = port
         self.dbname = dbname
@@ -147,6 +147,7 @@ class CheckTables(connection):
         self.total_root_size = 0
         self.lock = Lock()
         self.qlist = Queue()
+        self.pre_upgrade = pre_upgrade
         signal.signal(signal.SIGTERM, self.sig_handler)
         signal.signal(signal.SIGINT, self.sig_handler)
 
@@ -259,6 +260,7 @@ class CheckTables(connection):
 
     def dump_tables(self, fn):
         dblist = self.get_db_list()
+        table_info = []
         f = open(fn, "w")
 
         for dbname in dblist:
@@ -268,16 +270,30 @@ class CheckTables(connection):
             # get all the might-affected partitioned tables
             tables = self.get_affected_partitioned_tables(dbname)
 
-            # filter the tables again by checking with GUC, if check failed, add these tables to filtertabs
             if tables:
                 logger.info("There are {} partitioned tables in database {} that should be checked when doing in-place upgrade from EL7->EL8.".format(len(tables), dbname))
-                # qlist is used by multiple threads, start multiple threads to concurrent check these tables by using the GUC gp_detect_data_correctness
-                for t in tables:
-                    self.qlist.put(t)
-                self.concurrent_check(dbname)
+                # if check before os upgrade, it will print the SQL results and doesn't do the GUC check.
+                if self.pre_upgrade:
+                    for parrelid, tablename, coll, attname, has_default_partition in tables:
+                        # get the partition table size info to estimate the time
+                        msg, size = self.get_table_size_info(dbname, parrelid)
+                        table_info.append((parrelid, tablename, coll, attname, msg, size))
+                        # if no default partition, give a warning, in case of postfix failed
+                        if has_default_partition == 'f':
+                            logger.warning("no default partition for {}".format(tablename))
+                else:
+                    # start multiple threads to check if the rows are still in the correct partitions after os upgrade, if check failed, add these tables to filtertabs
+                    for t in tables:
+                        # qlist is used by multiple threads
+                        self.qlist.put(t)
+                    self.concurrent_check(dbname)
+                    table_info = self.filtertabs[:]
+                    print "hh"
+                    print len(table_info)
+                    self.filtertabs = []
 
-            # dump the filtered table info to the specified output file
-            if self.filtertabs:
+            # dump the table info to the specified output file
+            if table_info:
                 print>>f, "-- order table by size in %s order " % 'ascending' if self.order_size_ascend else '-- order table by size in descending order'
                 print>>f, "-- DB name: ", dbname
                 print>>f
@@ -288,7 +304,7 @@ class CheckTables(connection):
                 else:
                     self.filtertabs.sort(key=lambda x: x[-1], reverse=True)
 
-                for result in self.filtertabs:
+                for result in table_info:
                     parrelid = result[0]
                     name = result[1]
                     coll = result[2]
@@ -297,9 +313,6 @@ class CheckTables(connection):
                     print>>f, "-- parrelid:", parrelid, "| coll:", coll, "| attname:", attname, "| msg:", msg
                     print>>f, self.handle_one_table(name)
                     print>>f
-
-            # clear the results
-            self.filtertabs = []
 
         # print the total partition table size
         print "---------------------------------------------"
@@ -370,9 +383,11 @@ class CheckTables(connection):
                     logger.info("check table {tab} OK.".format(tab=partitioname))
                 except Exception as e:
                     logger.info("check table {tab} error out: {err_msg}".format(tab=partitioname, err_msg=str(e)))
-                    has_errror = True;
+                    has_error = True;
 
+            # if check failed, dump the table to the specified out file.
             if has_error:
+                # get the partition table size info to estimate the time
                 msg, size = self.get_table_size_info(dbname, parrelid)
                 self.filtertabslock.acquire()
                 self.filtertabs.append((parrelid, tablename, coll, attname, msg, size))
@@ -457,6 +472,7 @@ def parseargs():
     parser_precheck_table = subparsers.add_parser('precheck-table', help='list affected tables')
     required = parser_precheck_table.add_argument_group('required arguments')
     required.add_argument('--out', type=str, help='outfile path for the rebuild partition commands', required=True)
+    parser_precheck_table.add_argument('--pre_upgrade', action='store_true', help='check tables before os upgrade to EL8')
     parser_precheck_table.add_argument('--order_size_ascend', action='store_true', help='sort the tables by size in ascending order')
     parser_precheck_table.set_defaults(order_size_ascend=False)
     parser_precheck_table.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables')
@@ -478,7 +494,7 @@ if __name__ == "__main__":
         ci = CheckIndexes(args.host, args.port, args.dbname, args.user)
         ci.dump_index_info(args.out)
     elif args.cmd == 'precheck-table':
-        ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.nthread)
+        ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.nthread, args.pre_upgrade)
         ct.dump_tables(args.out)
     elif args.cmd == 'postfix':
         cr = PostFix(args.dbname, args.port, args.host, args.user, args.input)

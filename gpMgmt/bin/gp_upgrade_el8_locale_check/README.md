@@ -55,19 +55,32 @@ reindex index testupgrade.hash_idx1;
 ```
 ```
 $ python upgrade_el8_locale_check.py precheck-table --help
-usage: upgrade_el8_locale_check precheck-table [-h] --out OUT
+usage: upgrade_el8_locale_check precheck-table [-h] --out OUT [--pre_upgrade]
                                                [--order_size_ascend]
                                                [--nthread NTHREAD]
 
 optional arguments:
   -h, --help           show this help message and exit
+  --pre_upgrade        check tables before os upgrade to EL8
   --order_size_ascend  sort the tables by size in ascending order
   --nthread NTHREAD    the concurrent threads to check partition tables
 
-required arguments:
-  --out OUT            outfile path for the rebuild partition commands
+Notes: there is a new option pre_upgrade, which is used for step1 before OS upgrade, and it will print all the potential affected partition tables.
 
-Example usage:
+Example usage for check before OS upgrade:
+$ python upgrade_el8_locale_check.py precheck-table --pre_upgrade --out table_pre_upgrade.out
+2023-10-18 08:04:06,907 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing in-place upgrade from EL7->EL8.
+2023-10-18 08:04:06,947 - WARNING - no default partition for testupgrade.partition_range_test_3
+2023-10-18 08:04:06,984 - WARNING - no default partition for testupgrade.partition_range_test_ao
+2023-10-18 08:04:07,021 - WARNING - no default partition for testupgrade.partition_range_test_2
+2023-10-18 08:04:07,100 - WARNING - no default partition for testupgrade.root
+---------------------------------------------
+total table size (in GBytes) : 0.000396907329559
+total partition tables       : 6
+total leaf partitions        : 19
+---------------------------------------------
+
+Example usage for check after OS upgrade:
 $ python upgrade_el8_locale_check.py precheck-table --out table.out
 2023-10-16 04:12:19,064 - WARNING - There are 2 tables in database test that the distribution key is using custom operator class, should be checked when doing in-place upgrade from EL7->EL8.
 ---------------------------------------------
