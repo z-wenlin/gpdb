@@ -82,7 +82,7 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid >= 16384;
         """
         index = db.query(sql).getresult()
         if index:
-            logger.info("There are {} user indexes in database {} that needs reindex when doing in-place upgrade from EL7->EL8.".format(len(index), dbname))
+            logger.info("There are {} user indexes in database {} that needs reindex when doing OS upgrade from EL7->EL8.".format(len(index), dbname))
         db.close()
         return index
 
@@ -96,7 +96,7 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         """
         index = db.query(sql).getresult()
         if index:
-            logger.info("There are {} catalog indexes that needs reindex when doing in-place upgrade from EL7->EL8.".format(len(index)))
+            logger.info("There are {} catalog indexes that needs reindex when doing OS upgrade from EL7->EL8.".format(len(index)))
         db.close()
         return index
 
@@ -197,7 +197,7 @@ class CheckTables(connection):
         db.close()
         return tabs
 
-    # get the tables which distribution column is using custom operator class, it may be affected by the in-place upgrade, so give a warning.
+    # get the tables which distribution column is using custom operator class, it may be affected by the OS upgrade, so give a warning.
     def get_custom_opclass_as_distribute_keys_tables(self, dbname):
         db = self.get_db_conn(dbname)
         sql = """
@@ -205,7 +205,7 @@ class CheckTables(connection):
         """
         tables = db.query(sql).getresult()
         if tables:
-            logger.warning("There are {} tables in database {} that the distribution key is using custom operator class, should be checked when doing in-place upgrade from EL7->EL8.".format(len(tables), dbname))
+            logger.warning("There are {} tables in database {} that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7->EL8.".format(len(tables), dbname))
             print "---------------------------------------------"
             print "tablename | distclass"
             for t in tables:
@@ -260,10 +260,10 @@ class CheckTables(connection):
 
     def dump_tables(self, fn):
         dblist = self.get_db_list()
-        table_info = []
         f = open(fn, "w")
 
         for dbname in dblist:
+            table_info = []
             # check tables that the distribution columns are using custom operator class
             self.get_custom_opclass_as_distribute_keys_tables(dbname)
 
@@ -271,14 +271,14 @@ class CheckTables(connection):
             tables = self.get_affected_partitioned_tables(dbname)
 
             if tables:
-                logger.info("There are {} partitioned tables in database {} that should be checked when doing in-place upgrade from EL7->EL8.".format(len(tables), dbname))
+                logger.info("There are {} partitioned tables in database {} that should be checked when doing OS upgrade from EL7->EL8.".format(len(tables), dbname))
                 # if check before os upgrade, it will print the SQL results and doesn't do the GUC check.
                 if self.pre_upgrade:
                     for parrelid, tablename, coll, attname, has_default_partition in tables:
                         # get the partition table size info to estimate the time
                         msg, size = self.get_table_size_info(dbname, parrelid)
                         table_info.append((parrelid, tablename, coll, attname, msg, size))
-                        # if no default partition, give a warning, in case of postfix failed
+                        # if no default partition, give a warning, in case of migrate failed
                         if has_default_partition == 'f':
                             logger.warning("no default partition for {}".format(tablename))
                 else:
@@ -288,8 +288,6 @@ class CheckTables(connection):
                         self.qlist.put(t)
                     self.concurrent_check(dbname)
                     table_info = self.filtertabs[:]
-                    print "hh"
-                    print len(table_info)
                     self.filtertabs = []
 
             # dump the table info to the specified output file
@@ -404,7 +402,7 @@ class CheckTables(connection):
         db.close()
         logger.info("worker[{}]: finish.".format(idx))
 
-class PostFix(connection): 
+class migrate(connection): 
     def __init__(self, dbname, port, host, user, script_file):
         self.dbname = dbname
         self.port = self._get_pg_port(port)
@@ -458,7 +456,7 @@ class PostFix(connection):
             logger.error("{}".format(str(e)))
 
 def parseargs():
-    parser = argparse.ArgumentParser(prog='upgrade_el8_locale_check')
+    parser = argparse.ArgumentParser(prog='el8_migrate_locale')
     parser.add_argument('--host', type=str, help='Greenplum Database hostname')
     parser.add_argument('--port', type=int, help='Greenplum Database port')
     parser.add_argument('--dbname', type=str,  default='postgres', help='Greenplum Database database name')
@@ -477,7 +475,7 @@ def parseargs():
     parser_precheck_table.set_defaults(order_size_ascend=False)
     parser_precheck_table.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables')
 
-    parser_run = subparsers.add_parser('postfix', help='run the reindex and the rebuild partition commands')
+    parser_run = subparsers.add_parser('migrate', help='run the reindex and the rebuild partition commands')
     required = parser_run.add_argument_group('required arguments')
     required.add_argument('--input', type=str, help='the file contains reindex or rebuild partition commands', required=True)
 
@@ -496,8 +494,8 @@ if __name__ == "__main__":
     elif args.cmd == 'precheck-table':
         ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.nthread, args.pre_upgrade)
         ct.dump_tables(args.out)
-    elif args.cmd == 'postfix':
-        cr = PostFix(args.dbname, args.port, args.host, args.user, args.input)
+    elif args.cmd == 'migrate':
+        cr = migrate(args.dbname, args.port, args.host, args.user, args.input)
         cr.run()
     else:
         sys.stderr.write("unknown subcommand!")

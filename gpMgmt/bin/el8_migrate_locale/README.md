@@ -1,21 +1,21 @@
-1. use `python upgrade_el8_locale_check.py precheck-index` to list affected indexes.
-2. use `python upgrade_el8_locale_check.py precheck-table` to list affected partitioned tables.
-3. use `python upgrade_el8_locale_check.py postfix` to run the reindex and alter partition table commands.
+1. use `python el8_migrate_locale.py precheck-index` to list affected indexes.
+2. use `python el8_migrate_locale.py precheck-table` to list affected partitioned tables.
+3. use `python el8_migrate_locale.py migrate` to run the reindex and alter partition table commands.
 
 (Note: For easier reading, some example output is omitted with ellipses.)
 
 ```
-$ python upgrade_el8_locale_check.py --help
-usage: upgrade_el8_locale_check [-h] [--host HOST] [--port PORT]
+$ python el8_migrate_locale.py --help
+usage: el8_migrate_locale [-h] [--host HOST] [--port PORT]
                                 [--dbname DBNAME] [--user USER]
-                                {precheck-index,precheck-table,postfix} ...
+                                {precheck-index,precheck-table,migrate} ...
 
 positional arguments:
-  {precheck-index,precheck-table,postfix}
+  {precheck-index,precheck-table,migrate}
                         sub-command help
     precheck-index      list affected index
     precheck-table      list affected tables
-    postfix             run the reindex and the rebuild partition commands
+    migrate             run the reindex and the rebuild partition commands
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -25,8 +25,8 @@ optional arguments:
   --user USER           Greenplum Database user name
 ```
 ```
-$ python upgrade_el8_locale_check.py precheck-index --help
-usage: upgrade_el8_locale_check precheck-index [-h] --out OUT
+$ python el8_migrate_locale.py precheck-index --help
+usage: el8_migrate_locale precheck-index [-h] --out OUT
 
 optional arguments:
   -h, --help  show this help message and exit
@@ -36,9 +36,9 @@ required arguments:
 
 Example usage:
 
-$ python upgrade_el8_locale_check.py precheck-index --out index.out
-2023-10-18 11:04:13,944 - INFO - There are 2 catalog indexes that needs reindex when doing in-place upgrade from EL7->EL8.
-2023-10-18 11:04:14,001 - INFO - There are 7 user indexes in database test that needs reindex when doing in-place upgrade from EL7->EL8.
+$ python el8_migrate_locale.py precheck-index --out index.out
+2023-10-18 11:04:13,944 - INFO - There are 2 catalog indexes that needs reindex when doing OS upgrade from EL7->EL8.
+2023-10-18 11:04:14,001 - INFO - There are 7 user indexes in database test that needs reindex when doing OS upgrade from EL7->EL8.
 
 $ cat index.out
 -- DB name:  postgres
@@ -54,8 +54,8 @@ reindex index testupgrade.hash_idx1;
 ...
 ```
 ```
-$ python upgrade_el8_locale_check.py precheck-table --help
-usage: upgrade_el8_locale_check precheck-table [-h] --out OUT [--pre_upgrade]
+$ python el8_migrate_locale.py precheck-table --help
+usage: el8_migrate_locale precheck-table [-h] --out OUT [--pre_upgrade]
                                                [--order_size_ascend]
                                                [--nthread NTHREAD]
 
@@ -68,8 +68,8 @@ optional arguments:
 Notes: there is a new option pre_upgrade, which is used for step1 before OS upgrade, and it will print all the potential affected partition tables.
 
 Example usage for check before OS upgrade:
-$ python upgrade_el8_locale_check.py precheck-table --pre_upgrade --out table_pre_upgrade.out
-2023-10-18 08:04:06,907 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing in-place upgrade from EL7->EL8.
+$ python el8_migrate_locale.py precheck-table --pre_upgrade --out table_pre_upgrade.out
+2023-10-18 08:04:06,907 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing OS upgrade from EL7->EL8.
 2023-10-18 08:04:06,947 - WARNING - no default partition for testupgrade.partition_range_test_3
 2023-10-18 08:04:06,984 - WARNING - no default partition for testupgrade.partition_range_test_ao
 2023-10-18 08:04:07,021 - WARNING - no default partition for testupgrade.partition_range_test_2
@@ -81,14 +81,14 @@ total leaf partitions        : 19
 ---------------------------------------------
 
 Example usage for check after OS upgrade:
-$ python upgrade_el8_locale_check.py precheck-table --out table.out
-2023-10-16 04:12:19,064 - WARNING - There are 2 tables in database test that the distribution key is using custom operator class, should be checked when doing in-place upgrade from EL7->EL8.
+$ python el8_migrate_locale.py precheck-table --out table.out
+2023-10-16 04:12:19,064 - WARNING - There are 2 tables in database test that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7->EL8.
 ---------------------------------------------
 tablename | distclass
 ('testdiskey', 16397)
 ('testupgrade.test_citext', 16454)
 ---------------------------------------------
-2023-10-16 04:12:19,064 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing in-place upgrade from EL7->EL8.
+2023-10-16 04:12:19,064 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing OS upgrade from EL7->EL8.
 2023-10-16 04:12:19,066 - INFO - worker[0]: begin:
 2023-10-16 04:12:19,066 - INFO - worker[0]: connect to <testupgrade> ...
 2023-10-16 04:12:19,110 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_mar ...
@@ -112,8 +112,8 @@ total leaf partitions        : 19
 ---------------------------------------------
 
 Example Usage for using nthreads (check passed example):
-$ python upgrade_el8_locale_check.py precheck-table --out table.out --nthread 3
-2023-10-18 11:19:11,717 - INFO - There are 4 partitioned tables in database test that should be checked when doing in-place upgrade from EL7->EL8.
+$ python el8_migrate_locale.py precheck-table --out table.out --nthread 3
+2023-10-18 11:19:11,717 - INFO - There are 4 partitioned tables in database test that should be checked when doing OS upgrade from EL7->EL8.
 2023-10-18 11:19:11,718 - INFO - worker[0]: begin:
 2023-10-18 11:19:11,718 - INFO - worker[0]: connect to <test> ...
 2023-10-18 11:19:11,718 - INFO - worker[1]: begin:
@@ -167,8 +167,8 @@ begin; create temp table "testupgrade.partition_range_test_3_bak" as select * fr
 
 ```
 ```
-$ python upgrade_el8_locale_check.py postfix --help
-usage: upgrade_el8_locale_check postfix [-h] --input INPUT
+$ python el8_migrate_locale.py migrate --help
+usage: el8_migrate_locale migrate [-h] --input INPUT
 
 optional arguments:
   -h, --help     show this help message and exit
@@ -176,8 +176,8 @@ optional arguments:
 required arguments:
   --input INPUT  the file contains reindex or rebuild partition commands
 
-Example usage for postfix index:
-$ python upgrade_el8_locale_check.py postfix --input index.out
+Example usage for migrate index:
+$ python el8_migrate_locale.py migrate --input index.out
 2023-10-16 04:12:02,461 - INFO - db: testupgrade, total have 7 commands to execute
 2023-10-16 04:12:02,467 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_id1;
 2023-10-16 04:12:02,541 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_id2;
@@ -191,8 +191,8 @@ $ python upgrade_el8_locale_check.py postfix --input index.out
 2023-10-16 04:12:02,730 - INFO - db: postgres, executing command: reindex index pg_shseclabel_object_index;
 2023-10-16 04:12:02,754 - INFO - All done
 
-Example usage for postfix tables:
-$ python upgrade_el8_locale_check.py postfix --input table.out
+Example usage for migrate tables:
+$ python el8_migrate_locale.py migrate --input table.out
 2023-10-16 04:14:17,003 - INFO - db: testupgrade, total have 6 commands to execute
 2023-10-16 04:14:17,009 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.partition_range_test_3_bak" as select * from testupgrade.partition_range_test_3; truncate testupgrade.partition_range_test_3; insert into testupgrade.partition_range_test_3 select * from "testupgrade.partition_range_test_3_bak"; commit;
 2023-10-16 04:14:17,175 - INFO - db: testupgrade, executing analyze command: analyze testupgrade.partition_range_test_3;;
