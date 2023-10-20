@@ -41,14 +41,14 @@ $ python el8_migrate_locale.py precheck-index --out index.out
 2023-10-18 11:04:14,001 - INFO - There are 7 user indexes in database test that needs reindex when doing OS upgrade from EL7->EL8.
 
 $ cat index.out
--- DB name:  postgres
+\c  postgres
 -- catalog indexrelid: 3597 | index name: pg_seclabel_object_index | table name: pg_seclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_seclabel_object_index ON pg_catalog.pg_seclabel USING btree (objoid, classoid, objsubid, provider)
 reindex index pg_seclabel_object_index;
 
 -- catalog indexrelid: 3593 | index name: pg_shseclabel_object_index | table name: pg_shseclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_shseclabel_object_index ON pg_catalog.pg_shseclabel USING btree (objoid, classoid, provider)
 reindex index pg_shseclabel_object_index;
 
--- DB name:  test
+\c  test
 -- indexrelid: 16512 | index name: testupgrade.hash_idx1 | table name: testupgrade.hash_test1 | collname: default | indexdef:  CREATE INDEX hash_idx1 ON testupgrade.hash_test1 USING btree (content)
 reindex index testupgrade.hash_idx1;
 ...
@@ -75,7 +75,7 @@ $ python el8_migrate_locale.py precheck-table --pre_upgrade --out table_pre_upgr
 2023-10-18 08:04:07,021 - WARNING - no default partition for testupgrade.partition_range_test_2
 2023-10-18 08:04:07,100 - WARNING - no default partition for testupgrade.root
 ---------------------------------------------
-total table size (in GBytes) : 0.000396907329559
+total partition tables size  : 416 KB
 total partition tables       : 6
 total leaf partitions        : 19
 ---------------------------------------------
@@ -103,10 +103,10 @@ DETAIL:  Expected partition: partition_range_test_3_1_prt_feb, provided partitio
 
 2023-10-16 04:12:19,804 - WARNING - no default partition for testupgrade.partition_range_test_3
 ...
-2023-10-16 04:12:22,058 - INFO - Current progress: have 0 remaining, 2.99126505852 seconds passed.
+2023-10-16 04:12:22,058 - INFO - Current progress: have 0 remaining, 2.77 seconds passed.
 2023-10-16 04:12:22,058 - INFO - worker[0]: finish.
 ---------------------------------------------
-total table size (in GBytes) : 0.000396907329559
+total partition tables size  : 416 KB
 total partition tables       : 6
 total leaf partitions        : 19
 ---------------------------------------------
@@ -136,12 +136,12 @@ $ python el8_migrate_locale.py precheck-table --out table.out --nthread 3
 2023-10-18 11:19:11,755 - INFO - check table testupgrade.partition_range_test_1_1_prt_others OK.
 2023-10-18 11:19:11,755 - INFO - check table testupgrade.partition_range_test_ao_1_prt_feb OK.
 2023-10-18 11:19:11,755 - INFO - start checking table testupgrade.partition_range_test_ao_1_prt_jan ...
-2023-10-18 11:19:11,756 - INFO - Current progress: have 1 remaining, 0.0373229980469 seconds passed.
+2023-10-18 11:19:11,756 - INFO - Current progress: have 1 remaining, 0.97 seconds passed.
 2023-10-18 11:19:11,757 - INFO - check table testupgrade.partition_range_test_2_1_prt_jan OK.
-2023-10-18 11:19:11,758 - INFO - Current progress: have 0 remaining, 0.0390849113464 seconds passed.
+2023-10-18 11:19:11,758 - INFO - Current progress: have 0 remaining, 0.99 seconds passed.
 2023-10-18 11:19:11,758 - INFO - worker[2]: finish.
 2023-10-18 11:19:11,761 - INFO - check table testupgrade.partition_range_test_ao_1_prt_jan OK.
-2023-10-18 11:19:11,761 - INFO - Current progress: have 0 remaining, 0.0425379276276 seconds passed.
+2023-10-18 11:19:11,761 - INFO - Current progress: have 0 remaining, 1.07 seconds passed.
 2023-10-18 11:19:11,761 - INFO - worker[1]: finish.
 2023-10-18 11:19:11,763 - INFO - start checking table testupgrade.root_1_prt_mar ...
 2023-10-18 11:19:11,766 - INFO - check table testupgrade.root_1_prt_mar OK.
@@ -149,17 +149,17 @@ $ python el8_migrate_locale.py precheck-table --out table.out --nthread 3
 2023-10-18 11:19:11,769 - INFO - check table testupgrade.root_1_prt_feb OK.
 2023-10-18 11:19:11,770 - INFO - start checking table testupgrade.root_1_prt_jan ...
 2023-10-18 11:19:11,772 - INFO - check table testupgrade.root_1_prt_jan OK.
-2023-10-18 11:19:11,773 - INFO - Current progress: have 0 remaining, 0.0547292232513 seconds passed.
+2023-10-18 11:19:11,773 - INFO - Current progress: have 0 remaining, 1.4 seconds passed.
 2023-10-18 11:19:11,773 - INFO - worker[0]: finish.
 ---------------------------------------------
-total table size (in GBytes) : 0.0
+total partition tables size  : 0 Bytes
 total partition tables       : 0
 total leaf partitions        : 0
 ---------------------------------------------
 
 $ cat table.out
 -- order table by size in descending order
--- DB name:  testupgrade
+\c  testupgrade
 
 -- parrelid: 16649 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
 begin; create temp table "testupgrade.partition_range_test_3_bak" as select * from testupgrade.partition_range_test_3; truncate testupgrade.partition_range_test_3; insert into testupgrade.partition_range_test_3 select * from "testupgrade.partition_range_test_3_bak"; commit;

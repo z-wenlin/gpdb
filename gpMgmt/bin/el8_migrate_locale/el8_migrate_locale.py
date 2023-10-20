@@ -33,7 +33,7 @@ class connection(object):
                 port = self.get_port_from_conf()
             return int(port)
         except:
-            sys.exit("No port been set, please set env PGPORT or MASTER_DATA_DIRECTORY or specify the port in the command line")
+            sys.exit("No port has been set, please set env PGPORT or MASTER_DATA_DIRECTORY or specify the port in the command line")
 
     def get_port_from_conf(self):
         datadir = os.environ.get('MASTER_DATA_DIRECTORY')
@@ -114,7 +114,7 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         # print all catalog indexes that might be affected.
         cindex = self.get_affected_catalog_indexes()
         if cindex:
-            print>>f, "-- DB name: ", self.dbname
+            print>>f, "\c ", self.dbname
         for indexrelid, indexname, tablename, collname, indexdef in cindex:
             print>>f, "-- catalog indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
             print>>f, self.handle_one_index(indexname)
@@ -124,7 +124,7 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         for dbname in dblist:
             index = self.get_affected_user_indexes(dbname)
             if index:
-                print>>f, "-- DB name: ", dbname
+                print>>f, "\c ", dbname
             for indexrelid, indexname, tablename, collname, indexdef in index:
                 print>>f, "-- indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
                 print>>f, self.handle_one_index(indexname)
@@ -293,7 +293,7 @@ class CheckTables(connection):
             # dump the table info to the specified output file
             if table_info:
                 print>>f, "-- order table by size in %s order " % 'ascending' if self.order_size_ascend else '-- order table by size in descending order'
-                print>>f, "-- DB name: ", dbname
+                print>>f, "\c ", dbname
                 print>>f
 
                 # sort the tables by size
@@ -313,13 +313,27 @@ class CheckTables(connection):
                     print>>f
 
         # print the total partition table size
+        self.print_size_summary_info()
+
+        f.close()
+
+    def print_size_summary_info(self):
         print "---------------------------------------------"
-        print("total table size (in GBytes) : {}".format(float(self.total_root_size) / 1024.0**3))
+        KB = float(1024)
+        MB = float(KB ** 2)
+        GB = float(KB ** 3)
+        if self.total_root_size < KB:
+            print("total partition tables size  : {} Bytes".format(int(float(self.total_root_size))))
+        elif KB <= self.total_root_size < MB:
+            print("total partition tables size  : {} KB".format(int(float(self.total_root_size) / KB)))
+        elif MB <= self.total_root_size < GB:
+            print("total partition tables size  : {} MB".format(int(float(self.total_root_size) / MB)))
+        else:
+            print("total partition tables size  : {} GB".format(int(float(self.total_root_size) / GB)))
+
         print("total partition tables       : {}".format(self.total_roots))
         print("total leaf partitions        : {}".format(self.total_leafs))
         print "---------------------------------------------"
-
-        f.close()
 
     # start multiple threads to do the check
     def concurrent_check(self, dbname):
@@ -381,7 +395,7 @@ class CheckTables(connection):
                     logger.info("check table {tab} OK.".format(tab=partitioname))
                 except Exception as e:
                     logger.info("check table {tab} error out: {err_msg}".format(tab=partitioname, err_msg=str(e)))
-                    has_error = True;
+                    has_error = True
 
             # if check failed, dump the table to the specified out file.
             if has_error:
@@ -390,6 +404,7 @@ class CheckTables(connection):
                 self.filtertabslock.acquire()
                 self.filtertabs.append((parrelid, tablename, coll, attname, msg, size))
                 self.filtertabslock.release()
+                has_error = False
                 if has_default_partition == 'f':
                     logger.warning("no default partition for {}".format(tablename))
 
@@ -397,7 +412,7 @@ class CheckTables(connection):
             
             end = time.time()
             total_time = end - start
-            logger.info("Current progress: have {} remaining, {} seconds passed.".format(self.qlist.qsize(), total_time))
+            logger.info("Current progress: have {} remaining, {} seconds passed.".format(self.qlist.qsize(), round(total_time, 2)))
 
         db.close()
         logger.info("worker[{}]: finish.".format(idx))
@@ -417,8 +432,8 @@ class migrate(connection):
         with open(self.script_file) as f:
             for line in f:
                 sql = line.strip()
-                if sql.startswith("-- DB name: "):
-                    db_name = sql.split("-- DB name: ")[1].strip()
+                if sql.startswith("\c"):
+                    db_name = sql.split("\c")[1].strip()
                 if (sql.startswith("reindex") and sql.endswith(";") and sql.count(";") == 1):
                     self.dbdict[db_name].append(sql)
                 if (sql.startswith("begin;") and sql.endswith("commit;")):
