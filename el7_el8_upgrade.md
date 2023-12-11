@@ -360,7 +360,7 @@ So rewrite the upper SQL and use the following one, it's in `get_affected_partit
         FROM 
         might_affected_tables group by (prelid, coll, attname, parisdefault)
         )
-        select prelid::regclass::text as partitionname, coll, attname, bool_or(parisdefault) as parhasdefault from par_has_default group by (prelid, coll, attname) 
+        select prelid, prelid::regclass::text as partitionname, coll, attname, bool_or(parisdefault) as parhasdefault from par_has_default group by (prelid, coll, attname) ;
 ```
 2. How to do pre-check
 - Indexes
@@ -371,74 +371,112 @@ So rewrite the upper SQL and use the following one, it's in `get_affected_partit
  
     Example usage:
     ```
-  [gpadmin@cdw ~]$  python upgrade_check.py precheck-index --out index.out
-    2023-09-11 10:31:31,592 - INFO - There are 2 catalog indexes that might be affected due to upgrade.
-    2023-09-11 10:31:31,648 - INFO - There are 0 user indexes in database template1 that might be affected due to upgrade.
-    2023-09-11 10:31:31,679 - INFO - There are 0 user indexes in database postgres that might be affected due to upgrade.
-    2023-09-11 10:31:31,833 - INFO - There are 7 user indexes in database testupgrade that might be affected due to upgrade.
+  [gpadmin@cdw ~]$  python el8_migrate_locale.py precheck-index --out index.out
+    2023-10-18 11:04:13,944 - INFO - There are 2 catalog indexes that needs reindex when doing OS upgrade from EL7->EL8.
+    2023-10-18 11:04:14,001 - INFO - There are 7 user indexes in database test that needs reindex when doing OS upgrade from EL7->EL8.
     ```
   
     ```
     $ cat index.out
-    -- DB name:  postgres
-    -- catalog index name: pg_seclabel_object_index | table name: pg_seclabel | collate: 100 | collname: default | indexdef:  CREATE UNIQUE INDEX pg_seclabel_object_index ON pg_catalog.pg_seclabel USING btree (objoid, classoid, objsubid, provider)
+    \c  postgres
+    -- catalog indexrelid: 3597 | index name: pg_seclabel_object_index | table name: pg_seclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_seclabel_object_index ON pg_catalog.pg_seclabel USING btree (objoid, classoid, objsubid, provider)
     reindex index pg_seclabel_object_index;
-    
-    -- catalog index name: pg_shseclabel_object_index | table name: pg_shseclabel | collate: 100 | collname: default | indexdef:  CREATE UNIQUE INDEX pg_shseclabel_object_index ON pg_catalog.pg_shseclabel USING btree (objoid, classoid, provider)
+
+    -- catalog indexrelid: 3593 | index name: pg_shseclabel_object_index | table name: pg_shseclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_shseclabel_object_index ON pg_catalog.pg_shseclabel USING btree (objoid, classoid, provider)
     reindex index pg_shseclabel_object_index;
-  
-    -- DB name:  test
-    -- index name: test_idx_citext | table name: test_citext | collate: 100 | collname: default | indexdef:  CREATE INDEX test_idx_citext ON public.test_citext USING btree (nick)
-    reindex index test_idx_citext;
-    
-    -- index name: id1 | table name: test1 | collate: 100 | collname: default | indexdef:  CREATE INDEX id1 ON public.test1 USING btree (content)
-    reindex index id1;
+
+    \c  test
+    -- indexrelid: 16512 | index name: testupgrade.hash_idx1 | table name: testupgrade.hash_test1 | collname: default | indexdef:  CREATE INDEX hash_idx1 ON testupgrade.hash_test1 USING btree (content)
+    reindex index testupgrade.hash_idx1;
     ```
+
 - Range-partitioned tables
   
    Connect to each db, and run the upper filter SQL, then dump the table info (like the size of the table, partition numbers, etc) to the specified output file.
 
-   The precheck-index main functions are in `CheckTables()` and `dump()`
+   The precheck-index main functions are in `CheckTables()` and `dump_tables()`
 
-   Example usage:
-    ```
-  [gpadmin@cdw ~]$  python upgrade_check.py precheck-table --out table.out
-    2023-09-11 10:32:25,333 - INFO - There are 0 partitioned tables in database template1 that might be affected due to upgrade.
-    2023-09-11 10:32:25,434 - INFO - There are 0 partitioned tables in database postgres that might be affected due to upgrade.
-    2023-09-11 10:32:25,543 - INFO - There are 12 partitioned tables in database testupgrade that might be affected due to upgrade.
-    2023-09-11 10:32:25,614 - WARNING - no default partition for partition_range_test_2
-    2023-09-11 10:32:25,631 - WARNING - no default partition for root
-    2023-09-11 10:32:25,648 - WARNING - no default partition for partition_range_test_ao
-    total table size (in GBytes) : 0.000213801860809
-    total partition tables       : 4
-    total leaf partitions        : 12
-    ```
+   Notes: there is a new option pre_upgrade, which is used before OS upgrade, and it will print all the potential affected partition tables before OS upgrade.
+
+  Example usage for check partition tables before OS upgrade:
+  ```
+  $ python el8_migrate_locale.py precheck-table --pre_upgrade --out table_pre_upgrade.out
+  2023-10-18 08:04:06,907 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing OS upgrade from EL7->EL8.
+  2023-10-18 08:04:06,947 - WARNING - no default partition for testupgrade.partition_range_test_3
+  2023-10-18 08:04:06,984 - WARNING - no default partition for testupgrade.partition_range_test_ao
+  2023-10-18 08:04:07,021 - WARNING - no default partition for testupgrade.partition_range_test_2
+  2023-10-18 08:04:07,100 - WARNING - no default partition for testupgrade.root
+  ---------------------------------------------
+  total partition tables size  : 416 KB
+  total partition tables       : 6
+  total leaf partitions        : 19
+  ---------------------------------------------
+  ```
   
    Output file content:
 ```
-$ cat table.out  
+$ cat table_pre_upgrade.out  
 -- order table by size in descending order
--- DB name:  test
+\c  testupgrade
 
--- parrelid: 17343 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
-begin; create temp table partition_range_test_1_bak as select * from partition_range_test_1; truncate partition_range_test_1; insert into partition_range_test_1 select * from partition_range_test_1_bak; commit;
+-- parrelid: 16649 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
+begin; create temp table "testupgrade.partition_range_test_3_bak" as select * from testupgrade.partition_range_test_3; truncate testupgrade.partition_range_test_3; insert into testupgrade.partition_range_test_3 select * from "testupgrade.partition_range_test_3_bak"; commit;
 
--- parrelid: 17485 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
-begin; create temp table partition_range_test_3_bak as select * from partition_range_test_3; truncate partition_range_test_3; insert into partition_range_test_3 select * from partition_range_test_3_bak; commit;
-
--- parrelid: 17513 | coll: 100 | attname: date | msg: partition table, 4 leafs, size 98304
-begin; create temp table partition_range_test_4_bak as select * from partition_range_test_4; truncate partition_range_test_4; insert into partition_range_test_4 select * from partition_range_test_4_bak; commit;
 ```
 
 **New Update here**
 
-  For range-partitioned tables, based on the table lists getting from the upper SQLs, we filtered the partition tables lists again by using the GUC `gp_detect_data_correctness`, if the check failed, then dump those tables info the output files.
+  For range-partitioned tables, after OS upgrade, it's better to run the precheck-table again, but without the option pre_upgrade.
+  It will filter the partition tables lists which getting from the upper SQLs again by using the GUC `gp_detect_data_correctness`, if the check failed, it means that the data is not in the expected partitions after the OS upgrade, and it will dump those tables info the specified output files.
 
   The GUC comes from this PR https://github.com/greenplum-db/gpdb/pull/16367/files
 
   Also, we are using multiple threads to do the checking.
+
+Example usage for the check tables after OS upgrade:
+```
+$ python el8_migrate_locale.py precheck-table --out table.out
+2023-10-16 04:12:19,064 - WARNING - There are 2 tables in database test that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7->EL8.
+---------------------------------------------
+tablename | distclass
+('testdiskey', 16397)
+('testupgrade.test_citext', 16454)
+---------------------------------------------
+2023-10-16 04:12:19,064 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing OS upgrade from EL7->EL8.
+2023-10-16 04:12:19,066 - INFO - worker[0]: begin:
+2023-10-16 04:12:19,066 - INFO - worker[0]: connect to <testupgrade> ...
+2023-10-16 04:12:19,110 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_mar ...
+2023-10-16 04:12:19,162 - INFO - check table testupgrade.partition_range_test_3_1_prt_mar OK.
+2023-10-16 04:12:19,162 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_feb ...
+2023-10-16 04:12:19,574 - INFO - check table testupgrade.partition_range_test_3_1_prt_feb error out: ERROR:  trying to insert row into wrong partition  (seg1 10.0.138.96:20001 pid=3975)
+DETAIL:  Expected partition: partition_range_test_3_1_prt_mar, provided partition: partition_range_test_3_1_prt_feb.
+
+2023-10-16 04:12:19,575 - INFO - start checking table testupgrade.partition_range_test_3_1_prt_jan ...
+2023-10-16 04:12:19,762 - INFO - check table testupgrade.partition_range_test_3_1_prt_jan error out: ERROR:  trying to insert row into wrong partition  (seg1 10.0.138.96:20001 pid=3975)
+DETAIL:  Expected partition: partition_range_test_3_1_prt_feb, provided partition: partition_range_test_3_1_prt_jan.
+
+2023-10-16 04:12:19,804 - WARNING - no default partition for testupgrade.partition_range_test_3
+...
+2023-10-16 04:12:22,058 - INFO - Current progress: have 0 remaining, 2.77 seconds passed.
+2023-10-16 04:12:22,058 - INFO - worker[0]: finish.
+---------------------------------------------
+total partition tables size  : 416 KB
+total partition tables       : 6
+total leaf partitions        : 19
+---------------------------------------------
+```
+
+```
+$ cat table.out
+-- order table by size in descending order
+\c  testupgrade
+
+-- parrelid: 16649 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
+begin; create temp table "testupgrade.partition_range_test_3_bak" as select * from testupgrade.partition_range_test_3; truncate testupgrade.partition_range_test_3; insert into testupgrade.partition_range_test_3 select * from "testupgrade.partition_range_test_3_bak"; commit;
+...
+```
   
-3. How to do the postcheck
+3. How to do the migrate
 - For Indexes
 
     Just `reindex XXX`
@@ -449,27 +487,46 @@ begin; create temp table partition_range_test_4_bak as select * from partition_r
 
   `begin; create temp table XXX_bak as select * from XXX; truncate XXX; insert into XXX select * from XXX_bak; commit;`
 
-Example usage:
+Example usage for migrate index:
 ```
-[gpadmin@cdw ~]$  python upgrade_check.py postfix --input table.out
-2023-09-11 10:32:43,478 - INFO - db: testupgrade, total have 4 commands to execute
-2023-09-11 10:32:43,484 - INFO - db: testupgrade, executing command: begin; create temp table partition_range_test_1_bak as select * from partition_range_test_1; truncate partition_range_test_1; insert into partition_range_test_1 select * from partition_range_test_1_bak; commit;
-2023-09-11 10:32:43,732 - INFO - db: testupgrade, executing analyze command: analyze partition_range_test_1;;
-2023-09-11 10:32:43,752 - INFO - Current worker 0: have 3 remaining, 0.267693996429 seconds passed.
-2023-09-11 10:32:43,798 - INFO - db: testupgrade, executing command: begin; create temp table partition_range_test_2_bak as select * from partition_range_test_2; truncate partition_range_test_2; insert into partition_range_test_2 select * from partition_range_test_2_bak; commit;
-2023-09-11 10:32:44,247 - ERROR - ERROR:  no partition for partitioning key  (seg1 10.0.138.98:20001 pid=3979)
-
-2023-09-11 10:32:44,263 - INFO - db: testupgrade, executing command: begin; create temp table root_bak as select * from root; truncate root; insert into root select * from root_bak; commit;
-2023-09-11 10:32:44,403 - INFO - db: testupgrade, executing analyze command: analyze root;;
-2023-09-11 10:32:44,424 - INFO - Current worker 2: have 1 remaining, 0.160354852676 seconds passed.
-2023-09-11 10:32:44,478 - INFO - db: testupgrade, executing command: begin; create temp table partition_range_test_ao_bak as select * from partition_range_test_ao; truncate partition_range_test_ao; insert into partition_range_test_ao select * from partition_range_test_ao_bak; commit;
-2023-09-11 10:32:44,842 - ERROR - ERROR:  no partition for partitioning key  (seg1 10.0.138.98:20001 pid=3995)
-
-2023-09-11 10:32:44,981 - INFO - All done
+$ python el8_migrate_locale.py migrate --input index.out
+2023-10-16 04:12:02,461 - INFO - db: testupgrade, total have 7 commands to execute
+2023-10-16 04:12:02,467 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_id1;
+2023-10-16 04:12:02,541 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_id2;
+2023-10-16 04:12:02,566 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_id3;
+2023-10-16 04:12:02,592 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_citext_pkey;
+2023-10-16 04:12:02,623 - INFO - db: testupgrade, executing command: reindex index testupgrade.test_idx_citext;
+2023-10-16 04:12:02,647 - INFO - db: testupgrade, executing command: reindex index testupgrade.hash_idx1;
+2023-10-16 04:12:02,673 - INFO - db: testupgrade, executing command: reindex index testupgrade.idx_projecttag;
+2023-10-16 04:12:02,692 - INFO - db: postgres, total have 2 commands to execute
+2023-10-16 04:12:02,698 - INFO - db: postgres, executing command: reindex index pg_seclabel_object_index;
+2023-10-16 04:12:02,730 - INFO - db: postgres, executing command: reindex index pg_shseclabel_object_index;
+2023-10-16 04:12:02,754 - INFO - All done
 ```
 
-The main function is in `PostFix()`.
+Example usage for migrate tables:
+```
+$ python el8_migrate_locale.py migrate --input table.out
+2023-10-16 04:14:17,003 - INFO - db: testupgrade, total have 6 commands to execute
+2023-10-16 04:14:17,009 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.partition_range_test_3_bak" as select * from testupgrade.partition_range_test_3; truncate testupgrade.partition_range_test_3; insert into testupgrade.partition_range_test_3 select * from "testupgrade.partition_range_test_3_bak"; commit;
+2023-10-16 04:14:17,175 - INFO - db: testupgrade, executing analyze command: analyze testupgrade.partition_range_test_3;;
+2023-10-16 04:14:17,201 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.partition_range_test_2_bak" as select * from testupgrade.partition_range_test_2; truncate testupgrade.partition_range_test_2; insert into testupgrade.partition_range_test_2 select * from "testupgrade.partition_range_test_2_bak"; commit;
+2023-10-16 04:14:17,490 - ERROR - ERROR:  no partition for partitioning key  (seg1 10.0.138.96:20001 pid=4028)
+
+2023-10-16 04:14:17,497 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.partition_range_test_4_bak" as select * from testupgrade.partition_range_test_4; truncate testupgrade.partition_range_test_4; insert into testupgrade.partition_range_test_4 select * from "testupgrade.partition_range_test_4_bak"; commit;
+2023-10-16 04:14:17,628 - INFO - db: testupgrade, executing analyze command: analyze testupgrade.partition_range_test_4;;
+2023-10-16 04:14:17,660 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.partition_range_test_1_bak" as select * from testupgrade.partition_range_test_1; truncate testupgrade.partition_range_test_1; insert into testupgrade.partition_range_test_1 select * from "testupgrade.partition_range_test_1_bak"; commit;
+2023-10-16 04:14:17,784 - INFO - db: testupgrade, executing analyze command: analyze testupgrade.partition_range_test_1;;
+2023-10-16 04:14:17,808 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.root_bak" as select * from testupgrade.root; truncate testupgrade.root; insert into testupgrade.root select * from "testupgrade.root_bak"; commit;
+2023-10-16 04:14:17,928 - INFO - db: testupgrade, executing analyze command: analyze testupgrade.root;;
+2023-10-16 04:14:17,952 - INFO - db: testupgrade, executing command: begin; create temp table "testupgrade.partition_range_test_ao_bak" as select * from testupgrade.partition_range_test_ao; truncate testupgrade.partition_range_test_ao; insert into testupgrade.partition_range_test_ao select * from "testupgrade.partition_range_test_ao_bak"; commit;
+2023-10-16 04:14:18,276 - ERROR - ERROR:  no partition for partitioning key  (seg1 10.0.138.96:20001 pid=4060)
+
+2023-10-16 04:14:18,277 - INFO - All done
+```
+
+The main function is in `migrate()`.
 
 **New Update here**
 
-Before that, the `PostFix()` function are using multiple processes to run the alter commands. We changed it to use single process to avoid potential disk overhead.
+Before that, the `migrate()` function are using multiple processes to run the alter commands. We changed it to use single process to avoid potential disk overhead.
