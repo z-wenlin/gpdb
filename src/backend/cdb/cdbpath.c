@@ -271,7 +271,6 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			pathnode->path.startup_cost = subpath->total_cost;
 			pathnode->path.total_cost = subpath->total_cost;
 			pathnode->path.memory = subpath->memory;
-			pathnode->path.motionHazard = subpath->motionHazard;
 
 			/* Motion nodes are never rescannable. */
 			pathnode->path.rescannable = false;
@@ -320,7 +319,6 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			pathnode->path.startup_cost = subpath->total_cost;
 			pathnode->path.total_cost = subpath->total_cost;
 			pathnode->path.memory = subpath->memory;
-			pathnode->path.motionHazard = subpath->motionHazard;
 
 			/* Motion nodes are never rescannable. */
 			pathnode->path.rescannable = false;
@@ -569,7 +567,6 @@ cdbpath_create_motion_path(PlannerInfo *root,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	/*
@@ -624,7 +621,6 @@ cdbpath_create_explicit_motion_path(PlannerInfo *root,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	return (Path *) pathnode;
@@ -663,7 +659,6 @@ cdbpath_create_broadcast_motion_path(PlannerInfo *root,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	return (Path *) pathnode;
@@ -707,7 +702,6 @@ make_motion_path(PlannerInfo *root, Path *subpath,
 	cdbpath_cost_motion(root, pathnode);
 
 	/* Tell operators above us that slack may be needed for deadlock safety. */
-	pathnode->path.motionHazard = true;
 	pathnode->path.rescannable = false;
 
 	return pathnode;
@@ -2668,4 +2662,41 @@ can_elide_explicit_motion(PlannerInfo *root, Index rti, Path *subpath,
 	}
 
 	return false;
+}
+
+/*
+ * Does the path contain motion?
+ */
+bool
+cdbpath_contains_motion(Path *path)
+{
+	JoinPath   *joinPath;
+	AppendPath *appendPath;
+	ListCell   *lc;
+
+	if (IsJoinPath(path))
+	{
+		joinPath = (JoinPath *) path;
+		if (cdbpath_contains_motion(joinPath->outerjoinpath)
+			|| cdbpath_contains_motion(joinPath->innerjoinpath))
+			return true;
+		else
+			return false;
+	}
+	else if (IsA(path, AppendPath))
+	{
+		appendPath = (AppendPath *) path;
+		foreach(lc, appendPath->subpaths)
+		{
+			if (cdbpath_contains_motion((Path *) lfirst(lc)))
+				return true;
+		}
+		return false;
+	} else if(IsA(path, MaterialPath))
+	{
+		//if (cdbpath_contains_motion((Path *) lfirst(lc)))
+		return true;
+	}
+
+	return path->pathtype == T_Motion;
 }

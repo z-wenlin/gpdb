@@ -4846,7 +4846,6 @@ create_nestloop_plan(PlannerInfo *root,
 	List	   *nestParams;
 	Relids		saveOuterRels = root->curOuterRels;
 	bool		partition_selectors_created;
-	bool		prefetch = false;
 
 	push_partition_selector_candidate_for_join(root, best_path);
 
@@ -4889,8 +4888,7 @@ create_nestloop_plan(PlannerInfo *root,
 	 * NOTE: materialize_finished_plan() does *almost* what we want -- except
 	 * we aren't finished.
 	 */
-	if (best_path->innerjoinpath->motionHazard ||
-		!best_path->innerjoinpath->rescannable)
+	if (!best_path->innerjoinpath->rescannable || cdbpath_contains_motion(best_path->innerjoinpath))
 	{
 		Plan	   *p;
 		Material   *mat;
@@ -4928,10 +4926,11 @@ create_nestloop_plan(PlannerInfo *root,
 		 * MPP-1657: Even if there is already a materialize here, we
 		 * may need to update its strictness.
 		 */
-		if (best_path->outerjoinpath->motionHazard)
+		if (cdbpath_contains_motion(best_path->outerjoinpath))
 		{
 			mat->cdb_strict = true;
-			prefetch = true;
+			//TODO
+			//prefetch = true;
 		}
 	}
 	
@@ -4994,11 +4993,9 @@ create_nestloop_plan(PlannerInfo *root,
 		MaterialPath *mp = (MaterialPath *) best_path->innerjoinpath;
 
 		if (mp->cdb_strict)
-			prefetch = true;
+			//TODO
+			join_plan->join.prefetch_inner = true;
 	}
-
-	if (prefetch)
-		join_plan->join.prefetch_inner = true;
 
 	/*
 	 * If we injected a partition selector to the inner side, we must evaluate
@@ -5022,7 +5019,6 @@ create_mergejoin_plan(PlannerInfo *root,
 	List	   *joinclauses;
 	List	   *otherclauses;
 	List	   *mergeclauses;
-	bool		prefetch = false;
 	bool		set_mat_cdb_strict = false;
 	List	   *outerpathkeys;
 	List	   *innerpathkeys;
@@ -5149,9 +5145,9 @@ create_mergejoin_plan(PlannerInfo *root,
 	 *
 	 * See motion_sanity_walker() for details on how a deadlock may occur.
 	 */
-	if (best_path->jpath.outerjoinpath->motionHazard && best_path->jpath.innerjoinpath->motionHazard)
+	if (cdbpath_contains_motion(best_path->jpath.outerjoinpath) && cdbpath_contains_motion(best_path->jpath.innerjoinpath))
 	{
-		prefetch = true;
+		//TODO
 		if (!IsA(inner_plan, Sort))
 		{
 			if (!IsA(inner_plan, Material))
@@ -5349,8 +5345,6 @@ create_mergejoin_plan(PlannerInfo *root,
 							   best_path->jpath.jointype,
 							   best_path->jpath.inner_unique,
 							   best_path->skip_mark_restore);
-
-	join_plan->join.prefetch_inner = prefetch;
 
 	/*
 	 * If we injected a partition selector to the inner side, we must evaluate
@@ -5558,9 +5552,7 @@ create_hashjoin_plan(PlannerInfo *root,
 	 * (allowing us to check the outer for rows before building the
 	 * hash-table).
 	 */
-	if (best_path->jpath.outerjoinpath == NULL ||
-		best_path->jpath.outerjoinpath->motionHazard ||
-		best_path->jpath.innerjoinpath->motionHazard)
+	if (best_path->jpath.outerjoinpath == NULL || cdbpath_contains_motion(best_path->jpath.outerjoinpath) || cdbpath_contains_motion(best_path->jpath.innerjoinpath))
 	{
 		join_plan->join.prefetch_inner = true;
 	}

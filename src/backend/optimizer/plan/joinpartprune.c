@@ -278,7 +278,6 @@ create_partition_selector_path(PlannerInfo *root,
 	pathnode->path.pathkeys = subpath->pathkeys;
 
 	pathnode->path.locus = subpath->locus;
-	pathnode->path.motionHazard = subpath->motionHazard;
 	pathnode->path.rescannable = subpath->rescannable;
 	pathnode->path.sameslice_relids = subpath->sameslice_relids;
 
