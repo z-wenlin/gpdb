@@ -3675,10 +3675,10 @@ create_nestloop_path(PlannerInfo *root,
 		 * fully fetch the underlying (required to avoid our
 		 * deadlock hazard) we must set cdb_strict!
 		 */
-		if (cdbpath_contains_motion(inner_path) && cdbpath_contains_motion(outer_path))
-		{
-			matinner->cdb_strict = true;
-		}
+		// if (cdbpath_contains_motion(inner_path) && cdbpath_contains_motion(outer_path))
+		// {
+		// 	matinner->cdb_strict = true;
+		// }
 
 		inner_path = (Path *) matinner;
 	}

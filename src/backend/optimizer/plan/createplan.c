@@ -330,6 +330,8 @@ static Motion *cdbpathtoplan_create_motion_plan(PlannerInfo *root,
 								 Plan *subplan);
 static void append_initplan_for_function_scan(PlannerInfo *root, Path *best_path, Plan *plan);
 
+static bool plan_contains_motion(Plan *node, void *context);
+
 /*
  * create_plan
  *	  Creates the access plan for a query by recursively processing the
@@ -4846,6 +4848,9 @@ create_nestloop_plan(PlannerInfo *root,
 	List	   *nestParams;
 	Relids		saveOuterRels = root->curOuterRels;
 	bool		partition_selectors_created;
+	bool		prefetch = false;
+
+	contain_motion_walk_context ctx;
 
 	push_partition_selector_candidate_for_join(root, best_path);
 
@@ -4888,7 +4893,7 @@ create_nestloop_plan(PlannerInfo *root,
 	 * NOTE: materialize_finished_plan() does *almost* what we want -- except
 	 * we aren't finished.
 	 */
-	if (!best_path->innerjoinpath->rescannable || cdbpath_contains_motion(best_path->innerjoinpath))
+	if (!best_path->innerjoinpath->rescannable || plan_contains_motion(inner_plan, &ctx))
 	{
 		Plan	   *p;
 		Material   *mat;
@@ -4926,11 +4931,10 @@ create_nestloop_plan(PlannerInfo *root,
 		 * MPP-1657: Even if there is already a materialize here, we
 		 * may need to update its strictness.
 		 */
-		if (cdbpath_contains_motion(best_path->outerjoinpath))
+		if (plan_contains_motion(outer_plan, &ctx))
 		{
 			mat->cdb_strict = true;
-			//TODO
-			//prefetch = true;
+			prefetch = true;
 		}
 	}
 	
@@ -4993,9 +4997,11 @@ create_nestloop_plan(PlannerInfo *root,
 		MaterialPath *mp = (MaterialPath *) best_path->innerjoinpath;
 
 		if (mp->cdb_strict)
-			//TODO
-			join_plan->join.prefetch_inner = true;
+			prefetch = true;
 	}
+
+	if (prefetch)
+		join_plan->join.prefetch_inner = true;
 
 	/*
 	 * If we injected a partition selector to the inner side, we must evaluate
@@ -5036,6 +5042,7 @@ create_mergejoin_plan(PlannerInfo *root,
 	Path	   *outer_path = best_path->jpath.outerjoinpath;
 	Path	   *inner_path = best_path->jpath.innerjoinpath;
 	bool		partition_selectors_created;
+	contain_motion_walk_context ctx;
 
 	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
@@ -5145,7 +5152,7 @@ create_mergejoin_plan(PlannerInfo *root,
 	 *
 	 * See motion_sanity_walker() for details on how a deadlock may occur.
 	 */
-	if (cdbpath_contains_motion(best_path->jpath.outerjoinpath) && cdbpath_contains_motion(best_path->jpath.innerjoinpath))
+	if (plan_contains_motion(outer_plan, &ctx) && plan_contains_motion(inner_plan, &ctx))
 	{
 		//TODO
 		if (!IsA(inner_plan, Sort))
@@ -5381,6 +5388,7 @@ create_hashjoin_plan(PlannerInfo *root,
 	bool		skewInherit = false;
 	ListCell   *lc;
 	bool		partition_selectors_created;
+	contain_motion_walk_context ctx;
 
 	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
@@ -5552,7 +5560,7 @@ create_hashjoin_plan(PlannerInfo *root,
 	 * (allowing us to check the outer for rows before building the
 	 * hash-table).
 	 */
-	if (best_path->jpath.outerjoinpath == NULL || cdbpath_contains_motion(best_path->jpath.outerjoinpath) || cdbpath_contains_motion(best_path->jpath.innerjoinpath))
+	if (best_path->jpath.outerjoinpath == NULL || plan_contains_motion(outer_plan, &ctx) || plan_contains_motion(inner_plan, &ctx))
 	{
 		join_plan->join.prefetch_inner = true;
 	}
@@ -8300,3 +8308,17 @@ append_initplan_for_function_scan(PlannerInfo *root, Path *best_path, Plan *plan
 	initplan->scan.plan.flow = cdbpathtoplan_create_flow(root, best_path->locus);
 }
 
+static bool
+plan_contains_motion(Plan *node, void *context)
+{
+	Assert(context);
+	contain_motion_walk_context *ctx = (contain_motion_walk_context *) context;
+	if (node == NULL)
+		return false;
+
+	if (nodeTag(node) == T_Motion)
+	{
+		return true;
+	}
+	return plan_tree_walker((Node *)node, plan_contains_motion, ctx, true);
+}

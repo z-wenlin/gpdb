@@ -2672,6 +2672,9 @@ cdbpath_contains_motion(Path *path)
 {
 	JoinPath   *joinPath;
 	AppendPath *appendPath;
+	MaterialPath *materialPath;
+	SubqueryScanPath *subqueryScanPath;
+	UniquePath *uniquePath;
 	ListCell   *lc;
 
 	if (IsJoinPath(path))
@@ -2692,9 +2695,29 @@ cdbpath_contains_motion(Path *path)
 				return true;
 		}
 		return false;
-	} else if(IsA(path, MaterialPath))
+	} else if (IsA(path, MaterialPath))
 	{
-		//if (cdbpath_contains_motion((Path *) lfirst(lc)))
+		materialPath = (MaterialPath *) path;
+		if(materialPath->subpath)
+		{
+			return cdbpath_contains_motion(materialPath->subpath);
+		}
+	} else if (IsA(path, SubqueryScanPath))
+	{
+		subqueryScanPath = (SubqueryScanPath *)path;
+		if(subqueryScanPath->subpath)
+		{
+			return cdbpath_contains_motion((subqueryScanPath->subpath));
+		}
+	} else if (IsA(path, UniquePath))
+	{
+		uniquePath = (UniquePath *)path;
+		if(uniquePath->subpath)
+		{
+			return cdbpath_contains_motion((uniquePath->subpath));
+		}
+	} else if (IsA(path, TableFunctionScanPath) || IsA(path, CtePath))
+	{
 		return true;
 	}
 
