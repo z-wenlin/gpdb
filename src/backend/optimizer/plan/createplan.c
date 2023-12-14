@@ -100,6 +100,13 @@ typedef struct
 	bool                  result;
 } contain_motion_walk_context;
 
+typedef struct
+{
+	plan_tree_base_prefix base; /* Required prefix for
+								 * plan_tree_walker/mutator */
+} plan_contain_motion_context;
+
+
 static Plan *create_scan_plan(PlannerInfo *root, Path *best_path,
 							  int flags);
 static List *build_path_tlist(PlannerInfo *root, Path *path);
@@ -330,7 +337,7 @@ static Motion *cdbpathtoplan_create_motion_plan(PlannerInfo *root,
 								 Plan *subplan);
 static void append_initplan_for_function_scan(PlannerInfo *root, Path *best_path, Plan *plan);
 
-static bool plan_contains_motion(Plan *node, void *context);
+static bool plan_contains_motionHazard(PlannerInfo *root, Node *node, plan_contain_motion_context *context);
 
 /*
  * create_plan
@@ -4850,7 +4857,8 @@ create_nestloop_plan(PlannerInfo *root,
 	bool		partition_selectors_created;
 	bool		prefetch = false;
 
-	contain_motion_walk_context ctx;
+	plan_contain_motion_context ctx;
+	planner_init_plan_tree_base(&ctx.base, root);
 
 	push_partition_selector_candidate_for_join(root, best_path);
 
@@ -4893,7 +4901,8 @@ create_nestloop_plan(PlannerInfo *root,
 	 * NOTE: materialize_finished_plan() does *almost* what we want -- except
 	 * we aren't finished.
 	 */
-	if (!best_path->innerjoinpath->rescannable || plan_contains_motion(inner_plan, &ctx))
+	if (!best_path->innerjoinpath->rescannable || plan_contains_motionHazard(root, (Node *)inner_plan, &ctx))
+	//if (!best_path->innerjoinpath->rescannable)
 	{
 		Plan	   *p;
 		Material   *mat;
@@ -4931,7 +4940,7 @@ create_nestloop_plan(PlannerInfo *root,
 		 * MPP-1657: Even if there is already a materialize here, we
 		 * may need to update its strictness.
 		 */
-		if (plan_contains_motion(outer_plan, &ctx))
+		if (plan_contains_motionHazard(root, (Node *)outer_plan, &ctx))
 		{
 			mat->cdb_strict = true;
 			prefetch = true;
@@ -5042,7 +5051,9 @@ create_mergejoin_plan(PlannerInfo *root,
 	Path	   *outer_path = best_path->jpath.outerjoinpath;
 	Path	   *inner_path = best_path->jpath.innerjoinpath;
 	bool		partition_selectors_created;
-	contain_motion_walk_context ctx;
+	plan_contain_motion_context ctx;
+	planner_init_plan_tree_base(&ctx.base, root);
+
 
 	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
@@ -5152,7 +5163,7 @@ create_mergejoin_plan(PlannerInfo *root,
 	 *
 	 * See motion_sanity_walker() for details on how a deadlock may occur.
 	 */
-	if (plan_contains_motion(outer_plan, &ctx) && plan_contains_motion(inner_plan, &ctx))
+	if (plan_contains_motionHazard(root, (Node *)outer_plan, &ctx) && plan_contains_motionHazard(root, (Node *)inner_plan, &ctx))
 	{
 		//TODO
 		if (!IsA(inner_plan, Sort))
@@ -5388,7 +5399,8 @@ create_hashjoin_plan(PlannerInfo *root,
 	bool		skewInherit = false;
 	ListCell   *lc;
 	bool		partition_selectors_created;
-	contain_motion_walk_context ctx;
+	plan_contain_motion_context ctx;
+	planner_init_plan_tree_base(&ctx.base, root);
 
 	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
@@ -5560,7 +5572,8 @@ create_hashjoin_plan(PlannerInfo *root,
 	 * (allowing us to check the outer for rows before building the
 	 * hash-table).
 	 */
-	if (best_path->jpath.outerjoinpath == NULL || plan_contains_motion(outer_plan, &ctx) || plan_contains_motion(inner_plan, &ctx))
+	if (best_path->jpath.outerjoinpath == NULL || plan_contains_motionHazard(root, (Node *)outer_plan, &ctx) || plan_contains_motionHazard(root, (Node *)inner_plan, &ctx))
+	//if (best_path->jpath.outerjoinpath == NULL)
 	{
 		join_plan->join.prefetch_inner = true;
 	}
@@ -8309,16 +8322,24 @@ append_initplan_for_function_scan(PlannerInfo *root, Path *best_path, Plan *plan
 }
 
 static bool
-plan_contains_motion(Plan *node, void *context)
+plan_contains_motionHazard(PlannerInfo *root, Node *node, plan_contain_motion_context *ctx)
 {
-	Assert(context);
-	contain_motion_walk_context *ctx = (contain_motion_walk_context *) context;
+	Assert(ctx);
 	if (node == NULL)
 		return false;
-
-	if (nodeTag(node) == T_Motion)
+	
+	if (!is_plan_node(node))
+		return false;
+	
+	switch (nodeTag(node))
 	{
-		return true;
+		case T_Motion:
+		case T_CteScan:
+		case T_TableFuncScan:
+		case T_SubqueryScan:
+			return true;
+		default:
+			break;
 	}
-	return plan_tree_walker((Node *)node, plan_contains_motion, ctx, true);
+	return plan_tree_walker((Node *)node, plan_contains_motionHazard, &ctx, true);
 }
