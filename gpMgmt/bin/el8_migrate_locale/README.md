@@ -23,6 +23,7 @@ optional arguments:
   --port PORT           Greenplum Database port
   --dbname DBNAME       Greenplum Database database name
   --user USER           Greenplum Database user name
+  --verbose             Print more info
 ```
 ```
 $ python el8_migrate_locale.py precheck-index --help
@@ -211,3 +212,41 @@ $ python el8_migrate_locale.py migrate --input table.out
 2023-10-16 04:14:18,277 - INFO - All done
 ```
 
+Example usage for using verbose to print more info.
+```
+$ python el8_migrate_locale.py --verbose precheck-table --out table.out --pre_upgrade
+2024-01-05 17:40:01,816 - DEBUG - There are 0 range partitioning tables in database template1.
+2024-01-05 17:40:01,850 - DEBUG - There are 0 range partitioning tables in database postgres.
+2024-01-05 17:40:01,872 - WARNING - There are 1 tables in database testupgrade that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7->EL8.
+tablename  |distclass
+-----------+---------
+test_citext|16435
+(1 row)
+
+
+2024-01-05 17:40:01,887 - DEBUG - There are 8 range partitioning tables in database testupgrade.
+poid |attcollation|attrelid|attname|attnum
+-----+------------+--------+-------+------
+16512|100         |16500   |date   |2
+16526|100         |16514   |date   |2
+16553|100         |16542   |date   |2
+16581|100         |16569   |date   |2
+16618|100         |16597   |date   |2
+16752|0           |16746   |time   |2
+16809|100         |16798   |date   |2
+16836|100         |16825   |date   |2
+(8 rows)
+
+
+2024-01-05 17:40:01,904 - INFO - There are 7 range partitioning tables with partition key in collate types(like varchar, char, text) in database testupgrade, these tables might be affected due to Glibc upgrade and should be checked when doing OS upgrade from EL7->EL8.
+2024-01-05 17:40:01,904 - DEBUG - [(16569, 'root', 100, 'date', 'f'), (16500, 'test2', 100, 'date', 'f'), (16542, 'partition_range_test_default', 100, 'date', 't'), (16825, '"partition_range_ \'s\' "', 100, 'date', 't'), (16798, '"partition_range_ \'s "', 100, 'date', 't'), (16514, 'partition_range_test', 100, 'date', 'f'), (16597, 'partition_range_test_ao', 100, 'date', 'f')]
+2024-01-05 17:40:01,926 - WARNING - no default partition for root
+2024-01-05 17:40:01,945 - WARNING - no default partition for test2
+2024-01-05 17:40:02,030 - WARNING - no default partition for partition_range_test
+2024-01-05 17:40:02,052 - WARNING - no default partition for partition_range_test_ao
+---------------------------------------------
+total partition tables size  : 288 KB
+total partition tables       : 7
+total leaf partitions        : 19
+---------------------------------------------
+```
