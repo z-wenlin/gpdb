@@ -763,6 +763,34 @@ select a from t_test_append_rep
 union all
 select * from generate_series(100, 105);
 
+-- test INTERSECT/EXCEPT with segmentGeneral locus
+CREATE TABLE r1(a int) distributed replicated;
+INSERT INTO r1 select generate_series(1,10);
+explain (costs off) 
+select a from r1 where a < 5 except select a from r1 where a < 3;
+select a from r1 where a < 5 except select a from r1 where a < 3;
+explain (costs off)
+select a from r1 where a < 5 intersect select a from r1 where a < 3;
+select a from r1 where a < 5 intersect select a from r1 where a < 3;
+
+-- test INTERSECT/EXCEPT with General locus
+explain (costs off)
+select * from generate_series(1,5) except select * from generate_series(1,3);
+select * from generate_series(1,5) intersect select * from generate_series(1,3);
+explain (costs off)
+select * from generate_series(1,5) intersect select * from generate_series(1,3);
+select * from generate_series(1,5) intersect select * from generate_series(1,3);
+
+-- test INTERSECT/EXCEPT with partitioned locus
+CREATE TABLE p1(a int) distributed by (a);
+INSERT INTO p1 select generate_series(1,10);
+explain (costs off) 
+select a from p1 where a < 5 except select a from p1 where a < 3;
+select a from p1 where a < 5 except select a from p1 where a < 3;
+explain (costs off)
+select a from p1 where a < 5 intersect select a from p1 where a < 3;
+select a from p1 where a < 5 intersect select a from p1 where a < 3;
+
 --
 -- Test for creation of MergeAppend paths.
 --
