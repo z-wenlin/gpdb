@@ -23,7 +23,7 @@ optional arguments:
   --port PORT           Greenplum Database port
   --dbname DBNAME       Greenplum Database database name
   --user USER           Greenplum Database user name
-  --verbose             Print more info
+  -v, --verbose         Print more info
 ```
 ```
 $ python el8_migrate_locale.py precheck-index --help
@@ -70,7 +70,7 @@ Notes: there is a new option pre_upgrade, which is used for step1 before OS upgr
 
 Example usage for check before OS upgrade:
 $ python el8_migrate_locale.py precheck-table --pre_upgrade --out table_pre_upgrade.out
-2023-10-18 08:04:06,907 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing OS upgrade from EL7->EL8.
+2023-10-18 08:04:06,907 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing OS upgrade from EL7 to EL8.
 2023-10-18 08:04:06,947 - WARNING - no default partition for testupgrade.partition_range_test_3
 2023-10-18 08:04:06,984 - WARNING - no default partition for testupgrade.partition_range_test_ao
 2023-10-18 08:04:07,021 - WARNING - no default partition for testupgrade.partition_range_test_2
@@ -83,12 +83,12 @@ total leaf partitions        : 19
 
 Example usage for check after OS upgrade:
 $ python el8_migrate_locale.py precheck-table --out table.out
-2023-10-16 04:12:19,064 - WARNING - There are 2 tables in database test that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7->EL8.
----------------------------------------------
-tablename | distclass
-('testdiskey', 16397)
-('testupgrade.test_citext', 16454)
----------------------------------------------
+2023-10-16 04:12:19,064 - WARNING - There are 2 tables in database test that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7 to EL8.
+tablename  |distclass
+-----------+---------
+test_citext|24812
+(1 row)
+
 2023-10-16 04:12:19,064 - INFO - There are 6 partitioned tables in database testupgrade that should be checked when doing OS upgrade from EL7->EL8.
 2023-10-16 04:12:19,066 - INFO - worker[0]: begin:
 2023-10-16 04:12:19,066 - INFO - worker[0]: connect to <testupgrade> ...
@@ -114,7 +114,7 @@ total leaf partitions        : 19
 
 Example Usage for using nthreads (check passed example):
 $ python el8_migrate_locale.py precheck-table --out table.out --nthread 3
-2023-10-18 11:19:11,717 - INFO - There are 4 partitioned tables in database test that should be checked when doing OS upgrade from EL7->EL8.
+2023-10-18 11:19:11,717 - INFO - There are 4 partitioned tables in database test that should be checked when doing OS upgrade from EL7 to EL8.
 2023-10-18 11:19:11,718 - INFO - worker[0]: begin:
 2023-10-18 11:19:11,718 - INFO - worker[0]: connect to <test> ...
 2023-10-18 11:19:11,718 - INFO - worker[1]: begin:
@@ -215,35 +215,46 @@ $ python el8_migrate_locale.py migrate --input table.out
 Example usage for using verbose to print more info.
 ```
 $ python el8_migrate_locale.py --verbose precheck-table --out table.out --pre_upgrade
-2024-01-05 17:40:01,816 - DEBUG - There are 0 range partitioning tables in database template1.
-2024-01-05 17:40:01,850 - DEBUG - There are 0 range partitioning tables in database postgres.
-2024-01-05 17:40:01,872 - WARNING - There are 1 tables in database testupgrade that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7->EL8.
+2024-02-22 15:51:48,482 - DEBUG - There are 0 range partitioning tables in database template1.
+2024-02-22 15:51:48,590 - DEBUG - There are 0 range partitioning tables in database postgres.
+2024-02-22 15:51:48,657 - WARNING - There are 1 tables in database testupgrade that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7 to EL8.
 tablename  |distclass
 -----------+---------
-test_citext|16435
+test_citext|24812
 (1 row)
 
 
-2024-01-05 17:40:01,887 - DEBUG - There are 8 range partitioning tables in database testupgrade.
-poid |attcollation|attrelid|attname|attnum
------+------------+--------+-------+------
-16512|100         |16500   |date   |2
-16526|100         |16514   |date   |2
-16553|100         |16542   |date   |2
-16581|100         |16569   |date   |2
-16618|100         |16597   |date   |2
-16752|0           |16746   |time   |2
-16809|100         |16798   |date   |2
-16836|100         |16825   |date   |2
+2024-02-22 15:51:48,701 - DEBUG - There are 8 range partitioning tables in database testupgrade.
+parrelid|tablename                   |attcollation|attrelid|attname|attnum
+--------+----------------------------+------------+--------+-------+------
+25123   |sales                       |0           |25123   |time   |2
+24891   |partition_range_test        |100         |24891   |date   |2
+24919   |partition_range_test_default|100         |24919   |date   |2
+24946   |root                        |100         |24946   |date   |2
+24974   |partition_range_test_ao     |100         |24974   |date   |2
+25175   |"partition_range_ 's "      |100         |25175   |date   |2
+25202   |"partition_range_ 's' "     |100         |25202   |date   |2
+24877   |test2                       |100         |24877   |date   |2
 (8 rows)
 
 
-2024-01-05 17:40:01,904 - INFO - There are 7 range partitioning tables with partition key in collate types(like varchar, char, text) in database testupgrade, these tables might be affected due to Glibc upgrade and should be checked when doing OS upgrade from EL7->EL8.
-2024-01-05 17:40:01,904 - DEBUG - [(16569, 'root', 100, 'date', 'f'), (16500, 'test2', 100, 'date', 'f'), (16542, 'partition_range_test_default', 100, 'date', 't'), (16825, '"partition_range_ \'s\' "', 100, 'date', 't'), (16798, '"partition_range_ \'s "', 100, 'date', 't'), (16514, 'partition_range_test', 100, 'date', 'f'), (16597, 'partition_range_test_ao', 100, 'date', 'f')]
-2024-01-05 17:40:01,926 - WARNING - no default partition for root
-2024-01-05 17:40:01,945 - WARNING - no default partition for test2
-2024-01-05 17:40:02,030 - WARNING - no default partition for partition_range_test
-2024-01-05 17:40:02,052 - WARNING - no default partition for partition_range_test_ao
+2024-02-22 15:51:48,730 - WARNING - There are 7 range partitioning tables with partition key in collate types(like varchar, char, text) in database testupgrade, these tables might be affected due to Glibc upgrade and should be checked when doing OS upgrade from EL7 to EL8.
+parrelid|tablename                   |collation|attname|hasdefaultpartition
+--------+----------------------------+---------+-------+-------------------
+24877   |test2                       |100      |date   |f
+24946   |root                        |100      |date   |f
+24974   |partition_range_test_ao     |100      |date   |f
+25175   |"partition_range_ 's "      |100      |date   |t
+24919   |partition_range_test_default|100      |date   |t
+25202   |"partition_range_ 's' "     |100      |date   |t
+24891   |partition_range_test        |100      |date   |f
+(7 rows)
+
+
+2024-02-22 15:51:48,771 - WARNING - no default partition for test2
+2024-02-22 15:51:48,812 - WARNING - no default partition for root
+2024-02-22 15:51:48,853 - WARNING - no default partition for partition_range_test_ao
+2024-02-22 15:51:49,013 - WARNING - no default partition for partition_range_test
 ---------------------------------------------
 total partition tables size  : 288 KB
 total partition tables       : 7
