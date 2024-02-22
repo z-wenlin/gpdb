@@ -23,7 +23,7 @@ optional arguments:
   --port PORT           Greenplum Database port
   --dbname DBNAME       Greenplum Database database name
   --user USER           Greenplum Database user name
-  -v, --verbose         Print more info
+  --verbose             Print more info
 ```
 ```
 $ python el8_migrate_locale.py precheck-index --help

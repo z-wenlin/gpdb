@@ -505,7 +505,7 @@ def parseargs():
     parser.add_argument('--port', type=int, help='Greenplum Database port')
     parser.add_argument('--dbname', type=str,  default='postgres', help='Greenplum Database database name')
     parser.add_argument('--user', type=str, help='Greenplum Database user name')
-    parser.add_argument('-v', '--verbose', help="Print more info", action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.INFO)
+    parser.add_argument('--verbose', help="Print more info", action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.INFO)
 
     subparsers = parser.add_subparsers(help='sub-command help', dest='cmd')
     parser_precheck_index = subparsers.add_parser('precheck-index', help='list affected index')
