@@ -212,7 +212,14 @@ python el8_migrate_locale.py precheck-index --out index.out
 python el8_migrate_locale.py precheck-table --pre_upgrade --out table.out
 ```
 
-The subcommand `precheck-index` checks each database for indexes involving columns of type `text`, `varchar`, `char`, and `citext`, and the subcommand `precheck-table` checks each database for range-partitioned tables using these types in the partition key. The option `--pre_upgrade` lists the partition tables with the partition key using built-in collatable types.
+The subcommand `precheck-index` checks each database for indexes involving columns of type `text`, `varchar`, `char`, and `citext`, and the subcommand `precheck-table` checks each database for range-partitioned tables using these types in the partition key. 
+The option `--pre_upgrade` lists the partition tables with the partition key using built-in collatable types.
+
+> *Note* the pre_upgrade option just reports tables based on metadata, it's recommended to use precheck-table with the option before the OS upgrade.<br>
+> And without the pre_upgrade option check run after OS upgrade actually verifies table data with partition key and then reports exact tables which still need to be fixed.
+> The tables reported via this could be just equal to or just a subset of tables reported via pre_upgrade.<br>
+> Also, the precheck-table without pre_upgrade option depends on the GUC `gp_detect_data_correctness` to check if the current data distribution is correct.<br>
+> The example usage and output for the pre_upgrade option could be found at `gpMgmt/bin/el8_migrate_locale/README.md`
 
 These two script commands will effectively execute the following queries on each database within the cluster:
 
