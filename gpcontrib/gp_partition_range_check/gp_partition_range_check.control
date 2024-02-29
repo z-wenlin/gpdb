@@ -1,0 +1,5 @@
+# gp_partition_range_check extension
+comment = 'check partition range bound in a GPDB cluster'
+default_version = '1.0'
+module_pathname = '$libdir/gp_partition_range_check'
+relocatable = true

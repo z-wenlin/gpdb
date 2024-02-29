@@ -159,18 +159,22 @@ class CheckTables(connection):
         WITH might_affected_tables AS (
         SELECT
         prelid,
+        parclass,
         coll,
         attname,
         attnum,
+        atttypid,
         parisdefault
         FROM
         (
             select
             p.oid as poid,
             p.parrelid as prelid,
+            p.parclass,
             t.attcollation coll,
             t.attname as attname,
-            t.attnum as attnum
+            t.attnum as attnum,
+            t.atttypid as atttypid
             from
             pg_partition p
             join pg_attribute t on p.parrelid = t.attrelid
@@ -185,13 +189,15 @@ class CheckTables(connection):
         par_has_default AS (
         SELECT
         prelid,
+        parclass,
         coll,
         attname,
+        atttypid,
         parisdefault
         FROM 
-        might_affected_tables group by (prelid, coll, attname, parisdefault)
+        might_affected_tables group by (prelid, parclass, coll, attname, parisdefault, atttypid)
         )
-        select prelid as parrelid, prelid::regclass::text as tablename, coll as collation, attname, bool_or(parisdefault) as hasDefaultPartition from par_has_default group by (prelid, coll, attname) ;
+        select prelid as parrelid, prelid::regclass::text as tablename, parclass, coll as collation, attname, atttypid, bool_or(parisdefault) as hasDefaultPartition from par_has_default group by (prelid, coll, attname, atttypid, parclass) ;
         """
 
         #print more info, like the number of range-partition tables and partition key collation.
