@@ -5119,9 +5119,20 @@ checkNetworkTimeout(ICBuffer *buf, uint64 now, bool *networkTimeoutIsLogged)
 
 	if ((buf->nRetry > Gp_interconnect_min_retries_before_timeout) && (now - buf->sentTime) > ((uint64) Gp_interconnect_transmit_timeout * 1000 * 1000))
 	{
+		char errDetail[100];
+		/*
+		 * Usually, the default UDP package size of GP is 8192 (GUC: gp_max_packet_size), 
+		 * some router/switcher may drop all packages which bigger than the MTU settings.
+		 * If the seq = 1, it means that even the first packet was not successfully sent 
+		 * to the recevier and the sender tried to send it again.
+		 */
+		if (buf->pkt->seq == 1)
+		{
+			snprintf(errDetail, sizeof(errDetail), "Hint: check the MTU settings,try to reduce gp_max_packet_size less that MTU.");
+		}
 		ereport(ERROR,
 				(errcode(ERRCODE_GP_INTERCONNECTION_ERROR),
-				 errmsg("interconnect encountered a network error, please check your network"),
+				 errmsg("interconnect encountered a network error, please check your network %s", errDetail),
 				 errdetail("Failed to send packet (seq %u) to %s (pid %d cid %d) after %u retries in %d seconds.",
 						   buf->pkt->seq, buf->conn->remoteHostAndPort,
 						   buf->pkt->dstPid, buf->pkt->dstContentId,
