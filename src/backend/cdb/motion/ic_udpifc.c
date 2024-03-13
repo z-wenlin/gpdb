@@ -4615,6 +4615,21 @@ xmit_retry:
 			return n;
 		}
 
+		/*
+		 * Usually, the default UDP package size of GP is 8192 (GUC: gp_max_packet_size), 
+		 * some router/switcher may drop all packages which bigger than the MTU settings.
+		 * If the EMSGSIZE happened, it means that the message was too big to be sent as a 
+		 * single datagram, which might be due to MTU problem. Give a hint and stop retry.
+		 */
+		if (errno == EMSGSIZE)
+		{
+			ereport(ERROR, (errcode(ERRCODE_GP_INTERCONNECTION_ERROR),
+							errmsg("Interconnect error writing an outgoing packet: %m"),
+							errdetail("error during sendto() call (error:%d).\n"
+									"%s", save_errno, errDetail),
+							errhint("Please check the MTU configuration and the GUC gp_max_packet_size,try to set the same MTU values across the cluster and gp_max_packet_size less than the MTU value.\n")));
+		}
+
 		ereport(ERROR, (errcode(ERRCODE_GP_INTERCONNECTION_ERROR),
 						errmsg("Interconnect error writing an outgoing packet: %m"),
 						errdetail("error during sendto() call (error:%d).\n"
@@ -5119,20 +5134,13 @@ checkNetworkTimeout(ICBuffer *buf, uint64 now, bool *networkTimeoutIsLogged)
 
 	if ((buf->nRetry > Gp_interconnect_min_retries_before_timeout) && (now - buf->sentTime) > ((uint64) Gp_interconnect_transmit_timeout * 1000 * 1000))
 	{
-		/*
-		 * Usually, the default UDP package size of GP is 8192 (GUC: gp_max_packet_size), 
-		 * some router/switcher may drop all packages which bigger than the MTU settings.
-		 * If the seq = 1, it means that even the first packet was not successfully sent 
-		 * to the recevier and the sender tried to send it again.
-		 */
 		ereport(ERROR,
 				(errcode(ERRCODE_GP_INTERCONNECTION_ERROR),
 				 errmsg("interconnect encountered a network error, please check your network"),
 				 errdetail("Failed to send packet (seq %u) to %s (pid %d cid %d) after %u retries in %d seconds.",
 						   buf->pkt->seq, buf->conn->remoteHostAndPort,
 						   buf->pkt->dstPid, buf->pkt->dstContentId,
-						   buf->nRetry, Gp_interconnect_transmit_timeout),
-				buf->pkt->seq == 1 ? errhint("Check the MTU configuration and the GUC gp_max_packet_size,set the same MTU values across the cluster and gp_max_packet_size less than the MTU value.") : 0));
+						   buf->nRetry, Gp_interconnect_transmit_timeout)));
 	}
 
 	/*
