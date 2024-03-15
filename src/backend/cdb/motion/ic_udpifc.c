@@ -4616,10 +4616,8 @@ xmit_retry:
 		}
 
 		/*
-		 * Usually, the default UDP package size of GP is 8192 (GUC: gp_max_packet_size), 
-		 * some router/switcher may drop all packages which bigger than the MTU settings.
-		 * If the EMSGSIZE happened, it means that the message was too big to be sent as a 
-		 * single datagram, which might be due to MTU problem. Give a hint and stop retry.
+		 * If the OS can detect an MTU issue on the host network interfaces, we 
+		 * would get EMSGSIZE here. So, bail with a HINT about checking MTU.
 		 */
 		if (errno == EMSGSIZE)
 		{
@@ -4627,7 +4625,7 @@ xmit_retry:
 							errmsg("Interconnect error writing an outgoing packet: %m"),
 							errdetail("error during sendto() call (error:%d).\n"
 									"%s", save_errno, errDetail),
-							errhint("Please check the MTU configuration and the GUC gp_max_packet_size,try to set the same MTU values across the cluster and gp_max_packet_size less than the MTU value.\n")));
+							errhint("check if interface MTU is equal across the cluster and lower than gp_max_packet_size")));
 		}
 
 		ereport(ERROR, (errcode(ERRCODE_GP_INTERCONNECTION_ERROR),
