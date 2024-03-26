@@ -1804,10 +1804,7 @@ sendControlMessage(icpkthdr *pkt, int fd, struct sockaddr *addr, socklen_t peerL
 	if (gp_interconnect_full_crc)
 		addCRC(pkt);
 
-	char errDetail[100];
-	snprintf(errDetail, sizeof(errDetail), "Send control message: got error with seq %u", pkt->seq);
-	/* Retry for infinite times since we have no retransmit mechanism for control message */
-	n = sendtoWithRetry(fd, (const char *) pkt, pkt->len, 0, addr, peerLen, -1, errDetail);
+	n = sendto(fd, (const char *) pkt, pkt->len, 0, addr, peerLen);
 	if (n < pkt->len)
 		write_log("sendcontrolmessage: got error %d errno %d seq %d", n, errno, pkt->seq);
 }
