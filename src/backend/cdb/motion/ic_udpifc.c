@@ -1804,7 +1804,19 @@ sendControlMessage(icpkthdr *pkt, int fd, struct sockaddr *addr, socklen_t peerL
 	if (gp_interconnect_full_crc)
 		addCRC(pkt);
 
-	n = sendto(fd, (const char *) pkt, pkt->len, 0, addr, peerLen);
+	/* retry 10 times for sending control message */
+	int counter = 0;
+	while (counter < 10)
+	{
+		counter++;
+		n = sendto(fd, (const char *) pkt, pkt->len, 0, addr, peerLen);
+		if (n < 0)
+		{
+			if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+				continue;
+		}
+		break;
+	}
 	if (n < pkt->len)
 		write_log("sendcontrolmessage: got error %d errno %d seq %d", n, errno, pkt->seq);
 }
