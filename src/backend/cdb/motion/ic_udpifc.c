@@ -1814,6 +1814,10 @@ sendControlMessage(icpkthdr *pkt, int fd, struct sockaddr *addr, socklen_t peerL
 		{
 			if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
 				continue;
+			else {
+				write_log("sendcontrolmessage: got errno %d", errno);
+				return;
+			}
 		}
 		break;
 	}
