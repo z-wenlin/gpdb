@@ -248,7 +248,7 @@ testmode_sendto(const char *caller_name, int socket, const void *buffer,
 			return -1;
 		
 		case FINC_PKT_TOO_LONG:
-			if (!FINC_HAS_FAULT(fault_type))
+			if (!FINC_HAS_FAULT(fault_type) || !is_pkt)
 				break;
 			write_log("inject fault to sendto: FINC_PKT_TOO_LONG");
 			errno = EMSGSIZE;
