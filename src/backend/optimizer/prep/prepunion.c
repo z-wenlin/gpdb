@@ -882,14 +882,17 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 	for(optype = PSETOP_PARALLEL_PARTITIONED; optype <= PSETOP_GENERAL; optype++)
 	{
 		if ( (Gp_role == GP_ROLE_UTILITY || Gp_role == GP_ROLE_EXECUTE) 
-				&& optype != PSETOP_SEQUENTIAL_QD )
+				&& optype != PSETOP_SEQUENTIAL_QD ) /* MPP-2928 */
 			continue;
 		
 		copypath = list_copy(pathlist);
-		bool adjust = adjust_setop_arguments(root, copypath, tlist_list, optype);
+		if (Gp_role == GP_ROLE_DISPATCH)
+		{
+			bool adjust = adjust_setop_arguments(root, copypath, tlist_list, optype);
 		
-		if (!adjust)
-			continue;
+			if (!adjust)
+				continue;
+		}
 
 		/*
 		* Append the child results together.

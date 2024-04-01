@@ -776,7 +776,7 @@ select a from r1 where a < 5 intersect select a from r1 where a < 3;
 -- test INTERSECT/EXCEPT with General locus
 explain (costs off)
 select * from generate_series(1,5) except select * from generate_series(1,3);
-select * from generate_series(1,5) intersect select * from generate_series(1,3);
+select * from generate_series(1,5) except select * from generate_series(1,3);
 explain (costs off)
 select * from generate_series(1,5) intersect select * from generate_series(1,3);
 select * from generate_series(1,5) intersect select * from generate_series(1,3);
