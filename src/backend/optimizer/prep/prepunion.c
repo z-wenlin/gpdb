@@ -874,6 +874,21 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 		dNumOutputRows = op->all ? Min(lpath->rows, rpath->rows) : dNumGroups;
 	}
 
+	/*
+	 * We need to check if the arguments of the pathlist are general or replicated.
+ 	 * It's used for PSETOP_GENERAL and it needs all the arguments to be general.
+	 */
+	bool ok_general = true;
+	ListCell   *cell;
+	foreach(cell, pathlist)
+	{
+		Path	   *subpath = (Path *) lfirst(cell);
+		if(subpath->locus.locustype != CdbLocusType_General && subpath->locus.locustype != CdbLocusType_Replicated)
+		{
+			ok_general = false;
+			break;
+		}
+	}
 	/* We should use the new pathified upper planner
 	 * infrastructure for this. I think we should create multiple Paths,
 	 * representing different kinds of PSETOP_* implementations, and
@@ -884,7 +899,12 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 		if ( (Gp_role == GP_ROLE_UTILITY || Gp_role == GP_ROLE_EXECUTE) 
 				&& optype != PSETOP_SEQUENTIAL_QD ) /* MPP-2928 */
 			continue;
-		
+
+		/* PSETOP_GENERAL only occurs when all arguments are general */
+		if ((!ok_general && optype == PSETOP_GENERAL) || (ok_general && optype != PSETOP_GENERAL))
+			continue;
+
+		/* we need to copy pathlist because each loop might change the path. */
 		copypath = list_copy(pathlist);
 		if (Gp_role == GP_ROLE_DISPATCH)
 		{

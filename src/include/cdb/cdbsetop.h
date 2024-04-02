@@ -39,7 +39,7 @@
  *    unordered.  The set operation is performed on the QE as if it were 
  *    sequential.
  *
- * PSETOP_SEQUENTIAL_QE
+ * PSETOP_SEQUENTIAL_OUTERQUERY
  *    Similar to SEQUENTIAL_QD/QE, but the output must be made available
  *    to the outer query's locus. We don't know the outer query's locus yet,
  *    but we treat it sequential.

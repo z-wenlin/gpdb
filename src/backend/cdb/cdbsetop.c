@@ -45,15 +45,9 @@ adjust_setop_arguments(PlannerInfo *root, List *pathlist, List *tlist_list, GpSe
 
 		adjusted_path = subpath;
 
+		/* If one of the argment is outer query's locus, the output will be the outer query's locus */
 		if (CdbPathLocus_IsOuterQuery(subpath->locus)
 			&& setop_type != PSETOP_SEQUENTIAL_OUTERQUERY)
-		{
-			return false;
-		}
-
-		if ((CdbPathLocus_IsGeneral(subpath->locus)
-			|| CdbPathLocus_IsReplicated(subpath->locus))
-			&& setop_type != PSETOP_GENERAL)
 		{
 			return false;
 		}
@@ -61,9 +55,7 @@ adjust_setop_arguments(PlannerInfo *root, List *pathlist, List *tlist_list, GpSe
 		switch (setop_type)
 		{
 			case PSETOP_GENERAL:
-				CdbPathLocus_MakeEntry(&locus);
-				adjusted_path = cdbpath_create_motion_path(root, subpath, NULL, false,
-																   locus);
+				/* This only occurs when all arguments are general. */
 				break;
 
 			case PSETOP_PARALLEL_PARTITIONED:

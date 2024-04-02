@@ -791,6 +791,21 @@ explain (costs off)
 select a from p1 where a < 5 intersect select a from p1 where a < 3;
 select a from p1 where a < 5 intersect select a from p1 where a < 3;
 
+-- test INTERSECT/EXCEPT with General and partitioned locus
+create table ttt(id int);
+insert into ttt select generate_series(1,3);
+explain (costs off)
+select * from generate_series(1,5) intersect select * from ttt;
+select * from generate_series(1,5) intersect select * from ttt;
+explain (costs off)
+select * from generate_series(1,5) except select * from ttt;
+select * from generate_series(1,5) except select * from ttt;
+
+-- test INTERSECT/EXCEPT with General and segmentGeneral locus
+explain (costs off)
+select * from generate_series(1,5) intersect select * from r1;
+select * from generate_series(1,5) intersect select * from r1;
+
 --
 -- Test for creation of MergeAppend paths.
 --
