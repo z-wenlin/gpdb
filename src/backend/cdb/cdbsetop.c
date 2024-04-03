@@ -73,6 +73,15 @@ adjust_setop_arguments(PlannerInfo *root, List *pathlist, List *tlist_list, GpSe
 						 * the order of the firstFlags.
 						 */
 						adjusted_path = make_motion_hash_all_targets(root, subpath, subtlist);
+						/* 
+						 * When none of the columns are hashable, the locus will be changed to SingleQE.
+						 * For eg: explain select from generate_series(1,10) except select from tt2;
+						 * and this path will raise an ERROR:  unexpected gang size: 3 (nodeMotion.c:732)
+						 */
+						if (adjusted_path->locus.locustype == CdbLocusType_SingleQE)
+						{
+							return false;
+						}
 						break;
 					case CdbLocusType_Null:
 					case CdbLocusType_Entry:

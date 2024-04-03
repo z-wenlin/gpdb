@@ -799,10 +799,21 @@ explain (costs off)
 select * from generate_series(1,5) except select * from p1;
 select * from generate_series(1,5) except select * from p1;
 
+-- test INTERSECT/EXCEPT with General and partitioned locus, but none of the columns are hashable
+explain (costs off)
+select from generate_series(1,5) intersect select from p1;
+select from generate_series(1,5) intersect select from p1;
+explain (costs off)
+select from generate_series(1,5) except select from p1;
+select from generate_series(1,5) except select from p1;
+
 -- test INTERSECT/EXCEPT with General and segmentGeneral locus
 explain (costs off)
 select * from generate_series(1,5) intersect select * from r1;
 select * from generate_series(1,5) intersect select * from r1;
+explain (costs off)
+select * from generate_series(1,5) except select * from r1;
+select * from generate_series(1,5) except select * from r1;
 
 --
 -- Test for creation of MergeAppend paths.

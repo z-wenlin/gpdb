@@ -2230,6 +2230,42 @@ select * from generate_series(1,5) except select * from p1;
 -----------------
 (0 rows)
 
+-- test INTERSECT/EXCEPT with General and partitioned locus, but none of the columns are hashable
+explain (costs off)
+select from generate_series(1,5) intersect select from p1;
+                      QUERY PLAN                      
+------------------------------------------------------
+ Nested Loop
+   Join Filter: true
+   ->  Aggregate
+         ->  Gather Motion 3:1  (slice1; segments: 3)
+               ->  Seq Scan on p1
+   ->  Aggregate
+         ->  Function Scan on generate_series
+ Optimizer: GPORCA
+(8 rows)
+
+select from generate_series(1,5) intersect select from p1;
+--
+(1 row)
+
+explain (costs off)
+select from generate_series(1,5) except select from p1;
+                      QUERY PLAN                      
+------------------------------------------------------
+ Nested Loop Anti Join
+   Join Filter: true
+   ->  Function Scan on generate_series
+   ->  Materialize
+         ->  Gather Motion 3:1  (slice1; segments: 3)
+               ->  Seq Scan on p1
+ Optimizer: GPORCA
+(7 rows)
+
+select from generate_series(1,5) except select from p1;
+--
+(0 rows)
+
 -- test INTERSECT/EXCEPT with General and segmentGeneral locus
 explain (costs off)
 select * from generate_series(1,5) intersect select * from r1;
@@ -2239,7 +2275,7 @@ select * from generate_series(1,5) intersect select * from r1;
    ->  Hash Join
          Hash Cond: (NOT (generate_series.generate_series IS DISTINCT FROM r1.a))
          ->  Result
-               One-Time Filter: (gp_execution_segment() = 0)
+               One-Time Filter: (gp_execution_segment() = 1)
                ->  HashAggregate
                      Group Key: generate_series.generate_series
                      ->  Function Scan on generate_series
@@ -2261,6 +2297,32 @@ select * from generate_series(1,5) intersect select * from r1;
                1
                3
 (5 rows)
+
+explain (costs off)
+select * from generate_series(1,5) except select * from r1;
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)
+   ->  GroupAggregate
+         Group Key: generate_series.generate_series
+         ->  Sort
+               Sort Key: generate_series.generate_series
+               ->  Redistribute Motion 3:3  (slice2; segments: 3)
+                     Hash Key: generate_series.generate_series
+                     ->  Hash Anti Join
+                           Hash Cond: (NOT (generate_series.generate_series IS DISTINCT FROM r1.a))
+                           ->  Result
+                                 One-Time Filter: (gp_execution_segment() = 0)
+                                 ->  Function Scan on generate_series
+                           ->  Hash
+                                 ->  Seq Scan on r1
+ Optimizer: GPORCA
+(15 rows)
+
+select * from generate_series(1,5) except select * from r1;
+ generate_series 
+-----------------
+(0 rows)
 
 --
 -- Test for creation of MergeAppend paths.
