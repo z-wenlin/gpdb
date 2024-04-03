@@ -779,8 +779,7 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 			   *tlist_list,
 			   *tlist,
 			   *groupList,
-			   *pathlist,
-			   *copypath;
+			   *pathlist;
 	double		dLeftGroups,
 				dRightGroups,
 				dNumGroups,
@@ -875,18 +874,25 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 	}
 
 	/*
-	 * We need to check if the arguments of the pathlist are general or replicated.
+	 * We need to check if the loci of the node list is general or replicated.
  	 * It's used for PSETOP_GENERAL and it needs all the arguments to be general.
+	 * Also check if the loci of the node list is outerQuery. 
 	 */
 	bool ok_general = true;
+	bool has_outer = false;
 	ListCell   *cell;
+	List	   *copypath = pathlist;
 	foreach(cell, pathlist)
 	{
 		Path	   *subpath = (Path *) lfirst(cell);
-		if(subpath->locus.locustype != CdbLocusType_General && subpath->locus.locustype != CdbLocusType_Replicated)
+		if (subpath->locus.locustype == CdbLocusType_OuterQuery)
 		{
+			has_outer = true;
 			ok_general = false;
 			break;
+		} else if(subpath->locus.locustype != CdbLocusType_General && subpath->locus.locustype != CdbLocusType_Replicated)
+		{
+			ok_general = false;
 		}
 	}
 	/* We should use the new pathified upper planner
@@ -903,13 +909,16 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 		/* PSETOP_GENERAL only occurs when all arguments are general */
 		if ((!ok_general && optype == PSETOP_GENERAL) || (ok_general && optype != PSETOP_GENERAL))
 			continue;
+		
+		/* If one of the argment is outer query's locus, the output will be the outer query's locus */
+		if (has_outer && optype != PSETOP_SEQUENTIAL_OUTERQUERY)
+			continue;
 
-		/* we need to copy pathlist because each loop might change the path. */
-		copypath = list_copy(pathlist);
 		if (Gp_role == GP_ROLE_DISPATCH)
 		{
+			/* we need to copy pathlist because each loop might change the path. */
+			copypath = list_copy(pathlist);
 			bool adjust = adjust_setop_arguments(root, copypath, tlist_list, optype);
-		
 			if (!adjust)
 				continue;
 		}
@@ -967,8 +976,6 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 		result_rel->rows = path->rows;
 		add_path(result_rel, path);
 	}
-	set_cheapest(result_rel);
-	
 	return result_rel;
 }
 

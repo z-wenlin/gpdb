@@ -45,13 +45,6 @@ adjust_setop_arguments(PlannerInfo *root, List *pathlist, List *tlist_list, GpSe
 
 		adjusted_path = subpath;
 
-		/* If one of the argment is outer query's locus, the output will be the outer query's locus */
-		if (CdbPathLocus_IsOuterQuery(subpath->locus)
-			&& setop_type != PSETOP_SEQUENTIAL_OUTERQUERY)
-		{
-			return false;
-		}
-
 		switch (setop_type)
 		{
 			case PSETOP_GENERAL:
