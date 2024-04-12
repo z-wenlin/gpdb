@@ -66,15 +66,6 @@ adjust_setop_arguments(PlannerInfo *root, List *pathlist, List *tlist_list, GpSe
 						 * the order of the firstFlags.
 						 */
 						adjusted_path = make_motion_hash_all_targets(root, subpath, subtlist);
-						/* 
-						 * When none of the columns are hashable, the locus will be changed to SingleQE.
-						 * For eg: explain select from generate_series(1,10) except select from tt2;
-						 * and this path will raise an ERROR:  unexpected gang size: 3 (nodeMotion.c:732)
-						 */
-						if (adjusted_path->locus.locustype == CdbLocusType_SingleQE)
-						{
-							return false;
-						}
 						break;
 					case CdbLocusType_Null:
 					case CdbLocusType_Entry:
@@ -257,7 +248,17 @@ mark_append_locus(Path *path, GpSetOpType optype)
 			CdbPathLocus_MakeGeneral(&path->locus);
 			break;
 		case PSETOP_PARALLEL_PARTITIONED:
-			CdbPathLocus_MakeStrewn(&path->locus, getgpsegmentCount());
+			/* 
+			* When none of the columns are hashable, the locus will be changed to SingleQE.
+			* For eg: explain select from generate_series(1,10) except select from tt2;
+			* and this path will raise an ERROR:  unexpected gang size: 3 (nodeMotion.c:732)
+			*/
+			if ((&path->locus)->locustype == CdbLocusType_SingleQE )
+			{
+				CdbPathLocus_MakeSingleQE(&path->locus, getgpsegmentCount());
+			} else {
+				CdbPathLocus_MakeStrewn(&path->locus, getgpsegmentCount());
+			}
 			break;
 		case PSETOP_SEQUENTIAL_QD:
 			CdbPathLocus_MakeEntry(&path->locus);
