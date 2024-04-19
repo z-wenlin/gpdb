@@ -113,7 +113,7 @@ select gp_debug_reset_create_table_default_numsegments();
 select max(c1) as v, 1 as r from t2 union all select 1 as v, 2 as r;
 
 -- test non-union of SingleQE
-explain select max(c1) as v, 1 as r from t2 except select 1 as v, 2 as r;
+explain (costs off) select max(c1) as v, 1 as r from t2 except select 1 as v, 2 as r;
 select max(c1) as v, 1 as r from t2 except select 1 as v, 2 as r;
 
 -- append node should use the max numsegments of all the subpaths
