@@ -68,7 +68,14 @@ class connection(object):
         db.close
         return dbs
 
-class CheckIndexes(connection):
+class identify(connection):
+    def __init__(self, host, port, dbname, user, loglevel):
+        self.host = host
+        self.port = port
+        self.dbname = dbname
+        self.user = user
+        self.loglevel = loglevel
+
     def get_affected_user_indexes(self, dbname):
         db = self.get_db_conn(dbname)
         # The built-in collatable data types are text,varchar,and char, and the indcollation contains the OID of the collation
@@ -79,11 +86,13 @@ FROM (SELECT indexrelid, indrelid, indcollation[i] coll FROM pg_index, generate_
 JOIN pg_collation c ON coll=c.oid
 WHERE collname != 'C' and collname != 'POSIX' and indexrelid >= 16384;
         """
-        index = db.query(sql).getresult()
-        if index:
-            logger.info("There are {} user indexes in database {} that needs reindex when doing OS upgrade from EL7->EL8.".format(len(index), dbname))
+        index = db.query(sql)
+        result = index.getresult()
+        if len(result):
+            logger.info("There are {} user indexes in database {} that needs reindex when doing OS upgrade from EL7->EL8.".format(len(result), dbname))
+            print index
         db.close()
-        return index
+        return result
 
     def get_affected_catalog_indexes(self):
         db = self.get_default_db_conn()
@@ -93,64 +102,35 @@ FROM (SELECT indexrelid, indrelid, indcollation[i] coll FROM pg_index, generate_
 JOIN pg_collation c ON coll=c.oid
 WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         """
-        index = db.query(sql).getresult()
-        if index:
-            logger.info("There are {} catalog indexes that needs reindex when doing OS upgrade from EL7->EL8.".format(len(index)))
+        index = db.query(sql)
+        result = index.getresult()
+        if len(result):
+            logger.info("There are {} catalog indexes that needs reindex when doing OS upgrade from EL7->EL8.".format(len(result)))
+            print index
         db.close()
-        return index
-
-    def handle_one_index(self, name):
-        # no need to handle special charactor here, because the name will include the double quotes if it has special charactors.
-        sql = """
-        reindex index {};
-        """.format(name)
-        return sql.strip()
-
-    def dump_index_info(self, fn):
+        return result
+    
+    def dump_affected_index_to_stdout(self):
         dblist = self.get_db_list()
-        f = open(fn, "w")
-
         # print all catalog indexes that might be affected.
         cindex = self.get_affected_catalog_indexes()
-        if cindex:
-            print>>f, "\c ", self.dbname
-        for indexrelid, indexname, tablename, collname, indexdef in cindex:
-            print>>f, "-- catalog indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
-            print>>f, self.handle_one_index(indexname)
-            print>>f
-
         # print all user indexes in all databases that might be affected.
         for dbname in dblist:
             index = self.get_affected_user_indexes(dbname)
-            if index:
-                print>>f, "\c ", dbname
-            for indexrelid, indexname, tablename, collname, indexdef in index:
-                print>>f, "-- indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
-                print>>f, self.handle_one_index(indexname)
-                print>>f
-
-        f.close()
-
-class CheckTables(connection):
-    def __init__(self, host, port, dbname, user, order_size_ascend, nthread, pre_upgrade, loglevel):
-        self.host = host
-        self.port = port
-        self.dbname = dbname
-        self.user = user
-        self.order_size_ascend = order_size_ascend
-        self.nthread = nthread
-        self.filtertabs = []
-        self.filtertabslock = Lock()
-        self.total_leafs = 0
-        self.total_roots = 0
-        self.total_root_size = 0
-        self.lock = Lock()
-        self.qlist = Queue()
-        self.pre_upgrade = pre_upgrade
-        self.loglevel = loglevel
-        signal.signal(signal.SIGTERM, self.sig_handler)
-        signal.signal(signal.SIGINT, self.sig_handler)
-
+    
+    # get the tables which distribution column is using custom operator class, it may be affected by the OS upgrade, so give a warning.
+    def get_custom_opclass_as_distribute_keys_tables(self, dbname):
+        db = self.get_db_conn(dbname)
+        sql = """
+        select table_oid::regclass::text as tablename, max(distclass) as distclass from (select localoid , unnest(distclass::int[]) distclass from gp_distribution_policy) x(table_oid, distclass) group by table_oid having max(distclass) > 16384;
+        """
+        tables = db.query(sql)
+        result = tables.getresult()
+        if result:
+            logger.warning("There are {} tables in database {} that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7 to EL8.".format(len(result), dbname))
+            print tables
+        db.close()
+    
     def get_affected_partitioned_tables(self, dbname):
         db = self.get_db_conn(dbname)
         # The built-in collatable data types are text,varchar,and char, and the defined collation of the column, or zero if the column is not of a collatable data type
@@ -193,7 +173,6 @@ class CheckTables(connection):
         )
         select prelid as parrelid, prelid::regclass::text as tablename, coll as collation, attname, bool_or(parisdefault) as hasDefaultPartition from par_has_default group by (prelid, coll, attname) ;
         """
-
         #print more info, like the number of range-partition tables and partition key collation.
         sqlForDebug = """
         select
@@ -222,24 +201,66 @@ class CheckTables(connection):
         filterResult = filterTabs.getresult()
         if len(filterResult):
             logger.warning("There are {} range partitioning tables with partition key in collate types(like varchar, char, text) in database {}, these tables might be affected due to Glibc upgrade and should be checked when doing OS upgrade from EL7 to EL8.".format(len(filterResult), dbname))
-            if self.loglevel == logging.DEBUG:
-                print filterTabs
+            print filterTabs
 
         db.close()
         return filterResult
 
-    # get the tables which distribution column is using custom operator class, it may be affected by the OS upgrade, so give a warning.
-    def get_custom_opclass_as_distribute_keys_tables(self, dbname):
-        db = self.get_db_conn(dbname)
+    def dump_affected_tables_to_stdout(self):
+        dblist = self.get_db_list()
+        for dbname in dblist:
+            # check tables that the distribution columns are using custom operator class
+            self.get_custom_opclass_as_distribute_keys_tables(dbname)
+
+            # get all the might-affected partitioned tables
+            self.get_affected_partitioned_tables(dbname)
+
+
+class CheckIndexes(identify):
+    def handle_one_index(self, name):
+        # no need to handle special charactor here, because the name will include the double quotes if it has special charactors.
         sql = """
-        select table_oid::regclass::text as tablename, max(distclass) as distclass from (select localoid , unnest(distclass::int[]) distclass from gp_distribution_policy) x(table_oid, distclass) group by table_oid having max(distclass) > 16384;
-        """
-        tables = db.query(sql)
-        result = tables.getresult()
-        if result:
-            logger.warning("There are {} tables in database {} that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7 to EL8.".format(len(result), dbname))
-            print tables
-        db.close()
+        reindex index {};
+        """.format(name)
+        return sql.strip()
+
+    def dump_index_info(self, fn, mode):
+        dblist = self.get_db_list()
+        f = open(fn, mode)
+
+        # print all catalog indexes that might be affected.
+        cindex = self.get_affected_catalog_indexes()
+        if cindex:
+            print>>f, "\c ", self.dbname
+        for indexrelid, indexname, tablename, collname, indexdef in cindex:
+            print>>f, "-- catalog indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
+            print>>f, self.handle_one_index(indexname)
+            print>>f
+
+        # print all user indexes in all databases that might be affected.
+        for dbname in dblist:
+            index = self.get_affected_user_indexes(dbname)
+            if index:
+                print>>f, "\c ", dbname
+            for indexrelid, indexname, tablename, collname, indexdef in index:
+                print>>f, "-- indexrelid:", indexrelid, "| index name:", indexname, "| table name:", tablename, "| collname:", collname, "| indexdef: ", indexdef
+                print>>f, self.handle_one_index(indexname)
+                print>>f
+
+        f.close()
+
+class CheckTables(identify):
+    def __init__(self, host, port, dbname, user, order_size_ascend, loglevel):
+        self.host = host
+        self.port = port
+        self.dbname = dbname
+        self.user = user
+        self.order_size_ascend = order_size_ascend
+        self.total_leafs = 0
+        self.total_roots = 0
+        self.total_root_size = 0
+        self.lock = Lock()
+        self.loglevel = loglevel
 
     # Escape double-quotes in a string, so that the resulting string is suitable for
     # embedding as in SQL. Analogouous to libpq's PQescapeIdentifier
@@ -286,9 +307,9 @@ class CheckTables(connection):
         db.close()
         return "partition table, %s leafs, size %s" % (nleafs, size), size
 
-    def dump_tables(self, fn):
+    def dump_tables(self, fn, mode):
         dblist = self.get_db_list()
-        f = open(fn, "w")
+        f = open(fn, mode)
 
         for dbname in dblist:
             table_info = []
@@ -298,24 +319,13 @@ class CheckTables(connection):
             # get all the might-affected partitioned tables
             tables = self.get_affected_partitioned_tables(dbname)
 
-            if tables:
-                # if check before os upgrade, it will print the SQL results and doesn't do the GUC check.
-                if self.pre_upgrade:
-                    for parrelid, tablename, coll, attname, has_default_partition in tables:
-                        # get the partition table size info to estimate the time
-                        msg, size = self.get_table_size_info(dbname, parrelid)
-                        table_info.append((parrelid, tablename, coll, attname, msg, size))
-                        # if no default partition, give a warning, in case of migrate failed
-                        if has_default_partition == 'f':
-                            logger.warning("no default partition for {}".format(tablename))
-                else:
-                    # start multiple threads to check if the rows are still in the correct partitions after os upgrade, if check failed, add these tables to filtertabs
-                    for t in tables:
-                        # qlist is used by multiple threads
-                        self.qlist.put(t)
-                    self.concurrent_check(dbname)
-                    table_info = self.filtertabs[:]
-                    self.filtertabs = []
+            for parrelid, tablename, coll, attname, has_default_partition in tables:
+                # get the partition table size info to estimate the time
+                msg, size = self.get_table_size_info(dbname, parrelid)
+                table_info.append((parrelid, tablename, coll, attname, msg, size))
+                # if no default partition, give a warning, in case of migrate failed
+                if has_default_partition == 'f':
+                    logger.warning("no default partition for {}".format(tablename))
 
             # dump the table info to the specified output file
             if table_info:
@@ -325,9 +335,9 @@ class CheckTables(connection):
 
                 # sort the tables by size
                 if self.order_size_ascend:
-                    self.filtertabs.sort(key=lambda x: x[-1], reverse=False)
+                    table_info.sort(key=lambda x: x[-1], reverse=False)
                 else:
-                    self.filtertabs.sort(key=lambda x: x[-1], reverse=True)
+                    table_info.sort(key=lambda x: x[-1], reverse=True)
 
                 for result in table_info:
                     parrelid = result[0]
@@ -362,12 +372,40 @@ class CheckTables(connection):
         print("total leaf partitions        : {}".format(self.total_leafs))
         print "---------------------------------------------"
 
-    # start multiple threads to do the check
+
+class validate(CheckTables):
+    def __init__(self, host, port, dbname, user, nthread, order_size_ascend, loglevel):
+        self.host = host
+        self.port = port
+        self.dbname = dbname
+        self.user = user
+        self.nthread = nthread
+        self.order_size_ascend = order_size_ascend
+        self.loglevel = loglevel
+        self.qlist = Queue()
+        self.filtertabs = []
+        self.filtertabslock = Lock()
+        self.lock = Lock()
+        self.total_leafs = 0
+        self.total_roots = 0
+        self.total_root_size = 0
+        signal.signal(signal.SIGTERM, self.sig_handler)
+        signal.signal(signal.SIGINT, self.sig_handler)
+
+    def validateDataByGuc(self):
+        dblist = self.get_db_list()
+        for dbname in dblist:
+            tables = self.get_affected_partitioned_tables(dbname)
+            # start multiple threads to check if the rows are still in the correct partitions after os upgrade
+            for t in tables:
+                # qlist is used by multiple threads
+                self.qlist.put(t)
+            self.concurrent_check(dbname)
+
     def concurrent_check(self, dbname):
         threads = []
         for i in range(self.nthread):
-            t = Thread(target=CheckTables.check_partitiontables_by_guc,
-                       args=[self, i, dbname])
+            t = Thread(target=self.check_partitiontables_by_guc, args=[self, i, dbname])
             threads.append(t)
         for t in threads:
             t.start()
@@ -390,7 +428,7 @@ class CheckTables(connection):
         try:
             db.query("show gp_detect_data_correctness;")
         except Exception as e:
-            logger.warning("Failed to get GUC gp_detect_data_correctness")
+            logger.warning("Failed to get GUC gp_detect_data_correctness, and this GUC was introduced after GP 6.26, please check the current version of GPDB.")
         else:
             while not self.qlist.empty():
                 result = self.qlist.get()
@@ -424,7 +462,7 @@ class CheckTables(connection):
                         logger.info("check table {tab} error out: {err_msg}".format(tab=partitioname, err_msg=str(e)))
                         has_error = True
 
-                # if check failed, dump the table to the specified out file.
+                # if check failed, dump the filter impacted tables if specify the output file.
                 if has_error:
                     # get the partition table size info to estimate the time
                     msg, size = self.get_table_size_info(dbname, parrelid)
@@ -432,8 +470,6 @@ class CheckTables(connection):
                     self.filtertabs.append((parrelid, tablename, coll, attname, msg, size))
                     self.filtertabslock.release()
                     has_error = False
-                    if has_default_partition == 'f':
-                        logger.warning("no default partition for {}".format(tablename))
 
                 db.query("set gp_detect_data_correctness = 0;")
 
@@ -445,6 +481,34 @@ class CheckTables(connection):
             if db:
                 db.close()
             logger.info("worker[{}]: finish.".format(idx))
+            if args.output:
+                self.dump_filtered_tables(dbname, self.filtertabs)
+
+    def dump_filtered_tables(self, dbname, tabs):
+        f = open(args.output, 'w')
+        # dump the table info to the specified output file
+        if tabs:
+            print>>f, "-- order table by size in %s order " % 'ascending' if self.order_size_ascend else '-- order table by size in descending order'
+            print>>f, "\c ", dbname
+            print>>f
+
+            # sort the tables by size
+            if self.order_size_ascend:
+                tabs.sort(key=lambda x: x[-1], reverse=False)
+            else:
+                tabs.sort(key=lambda x: x[-1], reverse=True)
+
+            for result in tabs:
+                parrelid = result[0]
+                name = result[1]
+                coll = result[2]
+                attname = result[3]
+                msg = result[4]
+                print>>f, "-- parrelid:", parrelid, "| coll:", coll, "| attname:", attname, "| msg:", msg
+                print>>f, self.handle_one_table(name)
+                print>>f
+        f.close()
+
 
 class migrate(connection):
     def __init__(self, dbname, port, host, user, script_file):
@@ -508,17 +572,24 @@ def parseargs():
     parser.add_argument('--verbose', help="Print more info", action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.INFO)
 
     subparsers = parser.add_subparsers(help='sub-command help', dest='cmd')
-    parser_precheck_index = subparsers.add_parser('precheck-index', help='list affected index')
-    required = parser_precheck_index.add_argument_group('required arguments')
-    required.add_argument('--out', type=str, help='outfile path for the reindex commands', required=True)
+    parser_identify = subparsers.add_parser('identify', help=' run a check of an existing Greenplum cluster for impacted index and tables')
+    parser_identify.add_argument('--index', action='store_true', help='run a check of an existing Greenplum cluster for impacted indices ONLY')
+    parser_identify.add_argument('--table', action='store_true', help='run a check of an existing Greenplum cluster for impacted tables ONLY')
 
-    parser_precheck_table = subparsers.add_parser('precheck-table', help='list affected tables')
-    required = parser_precheck_table.add_argument_group('required arguments')
-    required.add_argument('--out', type=str, help='outfile path for the rebuild partition commands', required=True)
-    parser_precheck_table.add_argument('--pre_upgrade', action='store_true', help='check tables before os upgrade to EL8')
-    parser_precheck_table.add_argument('--order_size_ascend', action='store_true', help='sort the tables by size in ascending order')
-    parser_precheck_table.set_defaults(order_size_ascend=False)
-    parser_precheck_table.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables')
+    parser_prepare = subparsers.add_parser('prepare', help='prepare the commands for migrating (recreating) BOTH the impacted index and partitioned tables')
+    parser_prepare.add_argument('--index', action='store_true', help='prepare the commands for migrating (reindex) ONLY the impacted index')
+    parser_prepare.add_argument('--table', action='store_true', help='prepare the commands for migrating (rebuild) ONLY the impacted table')
+    required = parser_prepare.add_argument_group('required arguments')
+    required.add_argument('--output', type=str, help='output to the given [FILE] the commands for migrating', required=True)
+
+    parser_prepare.add_argument('--order_size_ascend', action='store_true', help='sort the tables by size in ascending order')
+    parser_prepare.set_defaults(order_size_ascend=False)
+
+    parser_validate = subparsers.add_parser('validate', help='validate the data correctness of partitioned tables using "gp_detect_data_correctness "')
+    parser_validate.add_argument('--nthread', type=int, default=1, help='the concurrent threads to check partition tables')
+    parser_validate.add_argument('--output', type=str, help='output to the given [FILE] the commands for migrating')
+    parser_validate.add_argument('--order_size_ascend', action='store_true', help='sort the tables by size in ascending order')
+    parser_validate.set_defaults(order_size_ascend=False)
 
     parser_run = subparsers.add_parser('migrate', help='run the reindex and the rebuild partition commands')
     required = parser_run.add_argument_group('required arguments')
@@ -533,12 +604,33 @@ if __name__ == "__main__":
     logging.basicConfig(level=args.loglevel, stream=sys.stdout, format="%(asctime)s - %(levelname)s - %(message)s")
     logger = logging.getLogger()
 
-    if args.cmd == 'precheck-index':
-        ci = CheckIndexes(args.host, args.port, args.dbname, args.user)
-        ci.dump_index_info(args.out)
-    elif args.cmd == 'precheck-table':
-        ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.nthread, args.pre_upgrade, args.loglevel)
-        ct.dump_tables(args.out)
+    if args.cmd == 'identify':
+        it = identify(args.host, args.port, args.dbname, args.user, args.loglevel)
+        if args.index:
+            it.dump_affected_index_to_stdout()
+        elif args.table:
+            it.dump_affected_tables_to_stdout()
+        else:
+            it.dump_affected_index_to_stdout()
+            it.dump_affected_tables_to_stdout()
+    
+    elif args.cmd == 'prepare':
+        if args.index:
+            ci = CheckIndexes(args.host, args.port, args.dbname, args.user, args.loglevel)
+            ci.dump_index_info(args.output, 'w')
+        elif args.table:
+            ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.loglevel)
+            ct.dump_tables(args.output, 'w')
+        else:
+            ci = CheckIndexes(args.host, args.port, args.dbname, args.user, args.loglevel)
+            ci.dump_index_info(args.output, 'w')
+            ct = CheckTables(args.host, args.port, args.dbname, args.user, args.order_size_ascend, args.loglevel)
+            ct.dump_tables(args.output, 'a')
+
+    elif args.cmd == 'validate':
+        vd = validate(args.host, args.port, args.dbname, args.user, args.nthread, args.order_size_ascend, args.loglevel)
+        vd.validateDataByGuc()
+
     elif args.cmd == 'migrate':
         cr = migrate(args.dbname, args.port, args.host, args.user, args.input)
         cr.run()

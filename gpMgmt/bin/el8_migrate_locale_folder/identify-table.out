@@ -1,0 +1,22 @@
+el8_migrate_locale identify --table
+
+2024-04-25 18:41:47,151 - WARNING - There are 1 tables in database test that the distribution key is using custom operator class, should be checked when doing OS upgrade from EL7 to EL8.
+tablename  |distclass
+-----------+---------
+test_citext|16435    
+(1 row)
+
+
+2024-04-25 18:41:47,207 - WARNING - There are 7 range partitioning tables with partition key in collate types(like varchar, char, text) in database test, these tables might be affected due to Glibc upgrade and should be checked when doing OS upgrade from EL7 to EL8.
+parrelid|tablename             |collation|attname|hasdefaultpartition
+--------+----------------------+---------+-------+-------------------
+16487   |partition_range_test_3|100      |date   |f                  
+16515   |partition_range_test_4|100      |date   |t                  
+16631   |partition_range_test_1|100      |date   |t                  
+16658   |partition_range_test_2|100      |date   |f                  
+16576   |testddlwithnodata     |100      |date   |f                  
+16597   |testddlwithdata       |100      |date   |t                  
+16549   |testddl               |100      |date   |t                  
+(7 rows)
+
+

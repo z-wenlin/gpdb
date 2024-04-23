@@ -7,7 +7,7 @@ ifneq "$(wildcard $(top_builddir)/src/Makefile.global)" ""
 include $(top_builddir)/src/Makefile.global
 endif
 
-SUBDIRS = stream gpcheckcat_modules gpconfig_modules gpssh_modules gppylib lib el8_migrate_locale
+SUBDIRS = stream gpcheckcat_modules gpconfig_modules gpssh_modules gppylib lib
 SUBDIRS += ifaddrs
 
 $(recurse)
@@ -16,7 +16,7 @@ PROGRAMS= analyzedb gpactivatestandby gpaddmirrors gpcheckcat gpcheckperf \
 	gpcheckresgroupimpl gpconfig gpdeletesystem gpexpand gpinitstandby \
 	gpinitsystem gpload gpload.py gplogfilter gpmovemirrors \
 	gppkg gprecoverseg gpreload gpscp gpsd gpssh gpssh-exkeys gpstart \
-	gpstate gpstop gpsys1 minirepro gpmemwatcher gpmemreport 
+	gpstate gpstop gpsys1 minirepro gpmemwatcher gpmemreport el8_migrate_locale
 
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(bindir)/lib'

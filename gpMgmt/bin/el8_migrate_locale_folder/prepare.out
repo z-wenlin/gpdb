@@ -1,0 +1,51 @@
+el8_migrate_locale prepare --output prepare.out
+
+cat prepare.out
+
+\c  postgres
+-- catalog indexrelid: 3597 | index name: pg_seclabel_object_index | table name: pg_seclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_seclabel_object_index ON pg_catalog.pg_seclabel USING btree (objoid, classoid, objsubid, provider)
+reindex index pg_seclabel_object_index;
+
+-- catalog indexrelid: 3593 | index name: pg_shseclabel_object_index | table name: pg_shseclabel | collname: default | indexdef:  CREATE UNIQUE INDEX pg_shseclabel_object_index ON pg_catalog.pg_shseclabel USING btree (objoid, classoid, provider)
+reindex index pg_shseclabel_object_index;
+
+\c  test
+-- indexrelid: 16392 | index name: "test_id2 \ $ \\" | table name: test_character_type | collname: default | indexdef:  CREATE INDEX "test_id2 \ $ \\" ON public.test_character_type USING btree (varchar_10)
+reindex index "test_id2 \ $ \\";
+
+-- indexrelid: 16391 | index name: "test_id1 's " | table name: test_character_type | collname: default | indexdef:  CREATE INDEX "test_id1 's " ON public.test_character_type USING btree (char_1)
+reindex index "test_id1 's ";
+
+-- indexrelid: 16486 | index name: test_idx_citext | table name: test_citext | collname: default | indexdef:  CREATE INDEX test_idx_citext ON public.test_citext USING btree (nick)
+reindex index test_idx_citext;
+
+-- indexrelid: 16484 | index name: test_citext_pkey | table name: test_citext | collname: default | indexdef:  CREATE UNIQUE INDEX test_citext_pkey ON public.test_citext USING btree (nick)
+reindex index test_citext_pkey;
+
+-- indexrelid: 16393 | index name: " test_id "" 3 " | table name: test_character_type | collname: default | indexdef:  CREATE INDEX " test_id "" 3 " ON public.test_character_type USING btree (txt)
+reindex index " test_id "" 3 ";
+
+-- order table by size in descending order
+\c  test
+
+-- parrelid: 16487 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
+begin; create temp table partition_range_test_3_bak as select * from partition_range_test_3; truncate partition_range_test_3; insert into partition_range_test_3 select * from partition_range_test_3_bak; commit;
+
+-- parrelid: 16515 | coll: 100 | attname: date | msg: partition table, 4 leafs, size 98304
+begin; create temp table partition_range_test_4_bak as select * from partition_range_test_4; truncate partition_range_test_4; insert into partition_range_test_4 select * from partition_range_test_4_bak; commit;
+
+-- parrelid: 16631 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
+begin; create temp table partition_range_test_1_bak as select * from partition_range_test_1; truncate partition_range_test_1; insert into partition_range_test_1 select * from partition_range_test_1_bak; commit;
+
+-- parrelid: 16658 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 98304
+begin; create temp table partition_range_test_2_bak as select * from partition_range_test_2; truncate partition_range_test_2; insert into partition_range_test_2 select * from partition_range_test_2_bak; commit;
+
+-- parrelid: 16597 | coll: 100 | attname: date | msg: partition table, 4 leafs, size 65536
+begin; create temp table testddlwithdata_bak as select * from testddlwithdata; truncate testddlwithdata; insert into testddlwithdata select * from testddlwithdata_bak; commit;
+
+-- parrelid: 16549 | coll: 100 | attname: date | msg: partition table, 3 leafs, size 32768
+begin; create temp table testddl_bak as select * from testddl; truncate testddl; insert into testddl select * from testddl_bak; commit;
+
+-- parrelid: 16576 | coll: 100 | attname: date | msg: partition table, 2 leafs, size 0
+begin; create temp table testddlwithnodata_bak as select * from testddlwithnodata; truncate testddlwithnodata; insert into testddlwithnodata select * from testddlwithnodata_bak; commit;
+
