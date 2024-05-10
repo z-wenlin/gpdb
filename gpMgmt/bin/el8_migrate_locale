@@ -89,7 +89,7 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid >= 16384;
         index = db.query(sql)
         result = index.getresult()
         if len(result):
-            logger.info("There are {} user indexes in database {} that needs reindex when doing OS upgrade from EL7->EL8.".format(len(result), dbname))
+            logger.info("There are {} user indexes in database {} that needs reindex when doing OS upgrade from EL7 to EL8.".format(len(result), dbname))
             print index
         db.close()
         return result
@@ -105,7 +105,7 @@ WHERE collname != 'C' and collname != 'POSIX' and indexrelid < 16384;
         index = db.query(sql)
         result = index.getresult()
         if len(result):
-            logger.info("There are {} catalog indexes that needs reindex when doing OS upgrade from EL7->EL8.".format(len(result)))
+            logger.info("There are {} catalog indexes that needs reindex when doing OS upgrade from EL7 to EL8.".format(len(result)))
             print index
         db.close()
         return result
