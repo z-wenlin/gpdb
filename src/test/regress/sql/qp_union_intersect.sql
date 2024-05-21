@@ -763,9 +763,10 @@ select a from t_test_append_rep
 union all
 select * from generate_series(100, 105);
 
--- test INTERSECT/EXCEPT with General and partitioned locus, but none of the columns are hashable
-CREATE TABLE p1(a int) distributed by (a);
-INSERT INTO p1 select generate_series(1,10);
+-- test INTERSECT/EXCEPT with General and partitioned locus, but no target list in the output
+-- See issue https://github.com/greenplum-db/gpdb/issues/17333 for details.
+create table p1(a int) distributed by (a);
+insert into p1 select generate_series(1,10);
 explain (costs off)
 select from generate_series(1,5) intersect select from p1;
 select from generate_series(1,5) intersect select from p1;
@@ -773,6 +774,22 @@ explain (costs off)
 select from generate_series(1,5) except select from p1;
 select from generate_series(1,5) except select from p1;
 
+-- test INTERSECT/EXCEPT when none of the columns are hashable
+create table base_type_t(a int, b int) distributed by (a);
+create table test_non_hashable(distkey base_type_t);
+insert into test_non_hashable values ((1,2));
+insert into test_non_hashable values ((2,3));
+insert into test_non_hashable values ((1,2));
+explain (costs off)
+select * from test_non_hashable intersect select * from test_non_hashable;
+select * from test_non_hashable intersect select * from test_non_hashable;
+explain (costs off)
+select * from test_non_hashable except select * from test_non_hashable;
+select * from test_non_hashable except select * from test_non_hashable;
+
+drop table p1;
+drop table test_non_hashable;
+drop table base_type_t;
 --
 -- Test for creation of MergeAppend paths.
 --

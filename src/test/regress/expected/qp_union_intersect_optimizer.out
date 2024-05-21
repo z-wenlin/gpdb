@@ -2010,9 +2010,10 @@ select * from generate_series(100, 105);
  105
 (12 rows)
 
--- test INTERSECT/EXCEPT with General and partitioned locus, but none of the columns are hashable
-CREATE TABLE p1(a int) distributed by (a);
-INSERT INTO p1 select generate_series(1,10);
+-- test INTERSECT/EXCEPT with General and partitioned locus, but no target list in the output
+-- See issue https://github.com/greenplum-db/gpdb/issues/17333 for details.
+create table p1(a int) distributed by (a);
+insert into p1 select generate_series(1,10);
 explain (costs off)
 select from generate_series(1,5) intersect select from p1;
                       QUERY PLAN                      
@@ -2048,6 +2049,71 @@ select from generate_series(1,5) except select from p1;
 --
 (0 rows)
 
+-- test INTERSECT/EXCEPT when none of the columns are hashable
+create table base_type_t(a int, b int) distributed by (a);
+create table test_non_hashable(distkey base_type_t);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause, and no column type is suitable for a distribution key. Creating a NULL policy entry.
+insert into test_non_hashable values ((1,2));
+insert into test_non_hashable values ((2,3));
+insert into test_non_hashable values ((1,2));
+explain (costs off)
+select * from test_non_hashable intersect select * from test_non_hashable;
+                                                    QUERY PLAN
+-------------------------------------------------------------------------------------------------------------------
+ Nested Loop
+   Join Filter: (NOT ((test_non_hashable_1.distkey)::record IS DISTINCT FROM (test_non_hashable.distkey)::record))
+   ->  GroupAggregate
+         Group Key: test_non_hashable_1.distkey
+         ->  Gather Motion 3:1  (slice2; segments: 3)
+               Merge Key: test_non_hashable_1.distkey
+               ->  Sort
+                     Sort Key: test_non_hashable_1.distkey
+                     ->  Seq Scan on test_non_hashable test_non_hashable_1
+   ->  Materialize
+         ->  GroupAggregate
+               Group Key: test_non_hashable.distkey
+               ->  Gather Motion 3:1  (slice1; segments: 3)
+                     Merge Key: test_non_hashable.distkey
+                     ->  Sort
+                           Sort Key: test_non_hashable.distkey
+                           ->  Seq Scan on test_non_hashable
+ Optimizer: GPORCA
+(18 rows)
+
+select * from test_non_hashable intersect select * from test_non_hashable;
+ distkey 
+---------
+ (1,2)
+ (2,3)
+(2 rows)
+
+explain (costs off)
+select * from test_non_hashable except select * from test_non_hashable;
+                                                             QUERY PLAN
+-------------------------------------------------------------------------------------------------------------------------------------
+ GroupAggregate
+   Group Key: test_non_hashable_1.distkey
+   ->  Gather Motion 3:1  (slice1; segments: 3)
+         Merge Key: test_non_hashable_1.distkey
+         ->  Sort
+               Sort Key: test_non_hashable_1.distkey
+               ->  Nested Loop Anti Join
+                     Join Filter: (NOT ((test_non_hashable_1.distkey)::record IS DISTINCT FROM (test_non_hashable.distkey)::record))
+                     ->  Seq Scan on test_non_hashable test_non_hashable_1
+                     ->  Materialize
+                           ->  Broadcast Motion 3:3  (slice2; segments: 3)
+                                 ->  Seq Scan on test_non_hashable
+ Optimizer: GPORCA
+(13 rows)
+
+select * from test_non_hashable except select * from test_non_hashable;
+ distkey 
+---------
+(0 rows)
+
+drop table p1;
+drop table test_non_hashable;
+drop table base_type_t;
 --
 -- Test for creation of MergeAppend paths.
 --

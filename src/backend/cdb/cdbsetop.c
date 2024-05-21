@@ -48,6 +48,7 @@ choose_setop_type(List *pathlist, List *tlist_list)
 	bool		ok_single_qe = true;
 	bool		has_partitioned = false;
 	bool 		all_resjunk = true;
+	bool        not_hashable = true;
 
 	Assert(Gp_role == GP_ROLE_DISPATCH || Gp_role == GP_ROLE_UTILITY);
 
@@ -95,7 +96,8 @@ choose_setop_type(List *pathlist, List *tlist_list)
 	}
 
 	/*
-	 * This is for handling the case when there is no targetList in the ouput.
+	 * This is for handling the case when there is no targetList in the ouput
+	 * or none of the columns are hashable.
 	 * For example: select from generate_series(1,10) except select from a;
 	 */
 	foreach(tlistcell, tlist_list)
@@ -107,14 +109,16 @@ choose_setop_type(List *pathlist, List *tlist_list)
 			if (!tle->resjunk)
 			{
 				all_resjunk = false;
-				break;
+				Oid opfamily = cdb_default_distribution_opfamily_for_type(exprType((Node *) tle->expr));
+				if (opfamily)
+					not_hashable = false;		/* not hashable */
 			}
 		}
 	}
 
 	if (ok_general)
 		return PSETOP_GENERAL;
-	else if (ok_partitioned && has_partitioned && !all_resjunk)
+	else if (ok_partitioned && has_partitioned && !all_resjunk && !not_hashable)
 		return PSETOP_PARALLEL_PARTITIONED;
 	else if (ok_single_qe)
 		return PSETOP_SEQUENTIAL_QE;
